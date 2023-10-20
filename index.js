@@ -1,11 +1,17 @@
 const express = require('express')
+const http = require('http');
+const https = require('https');
 const cors = require('cors')
 const fs = require('fs');
 const path = require('path')
 const app = express()
-const port = 3000
 const rootPath = require("./config.json")['rootPath'];
 const images = require('images');
+let privateKey  = fs.readFileSync('./cert/private.pem', 'utf8');
+let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
+let credentials = {key: privateKey, cert: certificate};
+let PORT = 3000;
+let SSLPORT = 3001;
 // const mime = require("./mime.json");
 app.use(cors())
 app.use(express.static('web'))
@@ -49,8 +55,12 @@ app.get('/list/:filePath', (req, res) => {
 
 })
 
+let httpServer = http.createServer(app);
+let httpsServer = https.createServer(credentials, app);
+httpServer.listen(PORT, function() {
+    console.log('HTTP Server is running on: http://localhost:%s', PORT);
+});
+httpsServer.listen(SSLPORT, function() {
+    console.log('HTTPS Server is running on: https://localhost:%s', SSLPORT);
+});
 
-app.listen(port, () => {
-    console.log("启动服务")
-    console.log(`监听端口 ${port}`)
-})

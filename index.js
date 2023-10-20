@@ -5,6 +5,7 @@ const path = require('path')
 const app = express()
 const port = 3000
 const rootPath = require("./config.json")['rootPath'];
+const images = require('images');
 // const mime = require("./mime.json");
 app.use(cors())
 app.use(express.static('web'))
@@ -47,6 +48,8 @@ app.get('/list/:filePath', (req, res) => {
     });
 
 })
+
+
 app.listen(port, () => {
     console.log("启动服务")
     console.log(`监听端口 ${port}`)

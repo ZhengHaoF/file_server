@@ -9,6 +9,8 @@ const rootPath = require("./config.json")['rootPath'];
 const images = require('images');
 let privateKey  = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
+let bodyParser = require('body-parser');
+app.use(bodyParser());
 let credentials = {key: privateKey, cert: certificate};
 let PORT = 3000;
 let SSLPORT = 3001;
@@ -53,6 +55,12 @@ app.get('/list/:filePath', (req, res) => {
         return res.json(data);
     });
 
+})
+
+
+app.post('/delFile', (req, res) => {
+    fs.unlinkSync(`${rootPath}${req.body.filePath}`)
+    return res.json({msg:'删除成功'});
 })
 
 let httpServer = http.createServer(app);

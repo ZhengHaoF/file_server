@@ -39,10 +39,11 @@ const imageInterceptor = (req, res, next) => {
                 path = path.replace("/getFile", "");
                 path = decodeURIComponent(path)
                 path = rootPath + path
-                console.log(`图片处理路径: ${path}`);
+                // console.log(`图片处理路径: ${path}`);
                 // 你可以选择直接发送响应，或者继续处理请求（调用 next()）
                 res.setHeader('Content-Type', 'application/octet-stream');
                 res.setHeader('Content-Disposition', 'attachment; filename=0.jpg');
+                let stime = new Date().getTime();
                 sharp(path)
                     .resize({
                             width: Number(w),
@@ -54,6 +55,8 @@ const imageInterceptor = (req, res, next) => {
                     .then(data => {
                         // 100 pixels wide, auto-scaled height
                         res.send(data)
+                        let etime = new Date().getTime();
+                        console.log(path + " -> 处理耗时:" + (etime-stime))
                     });
 
             } else {

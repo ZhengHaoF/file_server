@@ -37,6 +37,7 @@ const imageInterceptor = (req, res, next) => {
                 let w = size.split("x")[0];
                 let h = size.split("x")[1];
                 path = path.replace("/getFile", "");
+                path = decodeURIComponent(path)
                 path = rootPath + path
                 console.log(`图片处理路径: ${path}`);
                 // 你可以选择直接发送响应，或者继续处理请求（调用 next()）

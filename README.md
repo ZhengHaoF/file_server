@@ -1,9 +1,11 @@
 # 简易文件服务器后台
 
 ### 使用方法
-1. 修改config.json中需要共享的目录
-2. 使用 `node index.js` 运行
-3. 启动浏览器，打开`localhost:3000`即可访问
+1. `git clone https://github.com/ZhengHaoF/file_server.git`
+2. `cd file_server`
+3. 修改config.json中需要共享的目录
+4. 使用 `node index.js` 运行
+5. 启动浏览器，打开`IP:3000`即可访问
 
 ### 在线预览
 - 支持常见图片预览

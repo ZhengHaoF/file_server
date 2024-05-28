@@ -14,13 +14,13 @@
 - 可以直接预览缩略图
 
 #### 列表模式
-![img.png](img%2Fimg.png)
+![img.png](img%2Fimg.jpg)
 #### 图片模式
-![img_1.png](img%2Fimg_1.png)
+![img_1.png](img%2Fimg1.jpg)
 #### 设置功能
-![img_2.png](img%2Fimg_2.png)
+![img_2.png](img%2Fimg2.jpg)
 #### 图片查看
-![img_3.png](img%2Fimg_3.png)
+![img_3.png](img%2Fimg3.jpg)
 
 ###
 因为浏览器对视屏支持有限，目前主流浏览器大多只支持mp4,ogg,webm等基础格式，详细可以看这里：https://developer.mozilla.org/zh-CN/docs/Web/Media/Formats/Containers

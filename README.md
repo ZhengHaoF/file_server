@@ -22,5 +22,10 @@
 #### 图片查看
 ![img_3.png](img%2Fimg_3.png)
 
+###
+因为浏览器对视屏支持有限，目前主流浏览器大多只支持mp4,ogg,webm等基础格式，详细可以看这里：https://developer.mozilla.org/zh-CN/docs/Web/Media/Formats/Containers
+而大多数国产手机浏览器都有视屏小窗之类的功能，对视屏的兼容性是网页所不能及的，所以建议使用网页播放器，方便浏览器调用自带的播放器，这样体验最好。
+
+
 ### 前端地址
 https://github.com/ZhengHaoF/file_server_web

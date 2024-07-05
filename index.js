@@ -204,3 +204,5 @@ const run = async () => {
     webdavCliServer.on('log', (ctx, fs, path, log) => console.log(log));
 };
 run().then((res)=>{});
+
+console.log("使用Ctrl+C停止运行");

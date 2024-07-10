@@ -8,8 +8,8 @@ class WebdavCli {
     }
     getConfig(config) {
         // console.log(config);
-        const selfSignedKey = path_1.join(__dirname, '/../certs/self-signed.key.pem');
-        const selfSignedCert = path_1.join(__dirname, '/../certs/self-signed.cert.pem');
+        const selfSignedKey = path_1.join(__dirname, '/cert/self-signed.key.pem');
+        const selfSignedCert = path_1.join(__dirname, '/cert/self-signed.cert.pem');
         const path = config.path || process.cwd();
         const host = config.host || '127.0.0.1';
         const port = config.port || 1900;

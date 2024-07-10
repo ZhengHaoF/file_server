@@ -159,7 +159,7 @@ const config = {
     //显示自动索引
     autoIndex:  false,
     // 是否启用HTTPS
-    ssl: false,
+    ssl: true,
     // SSL密钥文件路径，留空则表示不使用自定义密钥
     sslKey: "",
     // SSL证书文件路径，留空则表示不使用自定义证书

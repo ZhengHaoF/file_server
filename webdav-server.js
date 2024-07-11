@@ -11,7 +11,7 @@ class WebdavCli {
         const selfSignedKey = path_1.join(__dirname, '/cert/self-signed.key.pem');
         const selfSignedCert = path_1.join(__dirname, '/cert/self-signed.cert.pem');
         const path = config.path || process.cwd();
-        const host = config.host || '127.0.0.1';
+        const host = config.host || '0.0.0.0';
         const port = config.port || 1900;
         const digest = Boolean(config.digest);
         let username = config.username;

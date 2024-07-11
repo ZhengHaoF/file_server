@@ -13,7 +13,6 @@ class FtpServer {
             port: config.port,
             root: config.root || "./"
         }
-        console.log(this.ftpConfig, 123456)
     }
 
     getNetworks() {

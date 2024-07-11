@@ -133,10 +133,10 @@ app.post('/delFile', (req, res) => {
 let httpServer = http.createServer(app);
 let httpsServer = https.createServer(credentials, app);
 httpServer.listen(PORT, function () {
-    console.log('HTTP Server is running on: http://localhost:%s', PORT);
+    console.log('HTTP 服务运行在: http://localhost:%s', PORT);
 });
 httpsServer.listen(SSLPORT, function () {
-    console.log('HTTPS Server is running on: https://localhost:%s', SSLPORT);
+    console.log('HTTPS 服务运行在: https://localhost:%s', SSLPORT);
 });
 
 //webdav server
@@ -205,4 +205,13 @@ const run = async () => {
 };
 run().then((res)=>{});
 
+const FtpServer = require("./ftp-server2");
+const ftpServer = new FtpServer.FtpServer({
+    anonymous:true, //为true时候可匿名登录
+    port:21,
+    root:rootPath,
+    username:"root",
+    password:"root",
+})
+ftpServer.ftpRun();
 console.log("使用Ctrl+C停止运行");

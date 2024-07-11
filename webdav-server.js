@@ -87,7 +87,7 @@ class WebdavCli {
         await server.setFileSystemAsync('/', new webdav_server_1.v2.PhysicalFileSystem(config.path));
         await server.startAsync(config.port);
         const logs = [
-            `WebDav Server running at ${config.url}`,
+            `WebDav 运行在： ${config.url}`,
             // `[rights]: ${config.rights}`,
             // `[digest]: ${config.digest}`,
             // `username: ${config.username}`,

@@ -26,8 +26,7 @@ class FtpServer {
         }
         return networks;
     }
-
-    resolverFunction(address) {
+    resolverFunction = (address)=>{
         // const networks = {
         //     '$GATEWAY_IP/32': `${public_ip}`,
         //     '10.0.0.0/8'    : `${lan_ip}`
@@ -42,7 +41,7 @@ class FtpServer {
     }
 
 
-    ftpRun() {
+    ftpRun = ()=> {
         const ftpServer = new FtpSrv({
             url: "ftp://0.0.0.0:" + this.ftpConfig.port,
             anonymous: true,

@@ -98,28 +98,35 @@ function getNowPath(filePath) {
 //获取文件列表
 app.get('/list/:filePath', (req, res) => {
     let nowPath = getNowPath(req.params.filePath)
-    try {
-        fs.readdir(nowPath, (err, files) => {
-            if (err) {
-                console.log(err)
-            }
-            let data = [];
-            if(files){
-                files.forEach(fileName => {
-                    let fileInfo = fs.statSync(nowPath + '/' + fileName);
-                    data.push({
-                        "name": fileName,
-                        "size": fileInfo.size,
-                        "isDirectory": fileInfo.isDirectory(),
-                        "isFile": fileInfo.isFile(),
-                        "suffix": path.extname(fileName),
-                    })
-                });
-                return res.json(data);
-            }
-        });
-    }catch (e) {
-        console.log(e)
+    if (fs.existsSync(nowPath)) {
+        //文件文件夹路径存在
+        console.log('Directory exists!');
+        try {
+            fs.readdir(nowPath, (err, files) => {
+                if (err) {
+                    console.log(err)
+                }
+                let data = [];
+                if(files){
+                    files.forEach(fileName => {
+                        let fileInfo = fs.statSync(nowPath + '/' + fileName);
+                        data.push({
+                            "name": fileName,
+                            "size": fileInfo.size,
+                            "isDirectory": fileInfo.isDirectory(),
+                            "isFile": fileInfo.isFile(),
+                            "suffix": path.extname(fileName),
+                        })
+                    });
+                    return res.json(data);
+                }
+            });
+        }catch (e) {
+            console.log(e)
+        }
+    } else {
+        //文件文件夹路径不存在
+        return res.status(404).send("文件夹不存在")
     }
 
 })

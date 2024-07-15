@@ -1,9 +1,8 @@
 //被动模式FTP
-const {networkInterfaces} = require('os');
-const {Netmask} = require('netmask');
+const { networkInterfaces } = require('os');
+const { Netmask } = require('netmask');
 const FtpSrv = require('ftp-srv');
-const GeneralError = require('ftp-srv');
-const {Errors} = require("webdav-server");
+const { Errors } = require("webdav-server");
 const nets = networkInterfaces();
 
 class FtpServer {
@@ -11,6 +10,8 @@ class FtpServer {
         this.ftpConfig = {
             anonymous: Boolean(config.anonymous),
             port: config.port,
+            password: config.password,
+            username: config.username,
             root: config.root || "./"
         }
     }
@@ -26,7 +27,7 @@ class FtpServer {
         }
         return networks;
     }
-    resolverFunction = (address)=>{
+    resolverFunction = (address) => {
         // const networks = {
         //     '$GATEWAY_IP/32': `${public_ip}`,
         //     '10.0.0.0/8'    : `${lan_ip}`
@@ -41,7 +42,8 @@ class FtpServer {
     }
 
 
-    ftpRun = ()=> {
+    ftpRun() {
+        console.log(this.ftpConfig, 8848)
         const ftpServer = new FtpSrv({
             url: "ftp://0.0.0.0:" + this.ftpConfig.port,
             anonymous: true,
@@ -50,17 +52,18 @@ class FtpServer {
         ftpServer.listen().then(() => {
             console.log("FPT服务 运行在：ftp://0.0.0.0:" + this.ftpConfig.port)
         });
-        ftpServer.on('login', ({connection, username, password}, resolve, reject) => {
-            // console.log(connection.id,"用户")
+        ftpServer.on('login', ({ connection, username, password }, resolve, reject) => {
+            console.log(username, password, this.ftpConfig.username, this.ftpConfig.password, "用户")
             if (this.ftpConfig.anonymous === false) {
                 if (username === this.ftpConfig.username && password === this.ftpConfig.password) {
-                    return resolve({root: this.ftpConfig.root});
+
+                    return resolve({ root: this.ftpConfig.root });
                 } else {
-                    reject(new GeneralError("Invalid username or password", 401));
-                    return ftpServer.disconnectClient(connection.id).then();
+                    return reject(new FtpSrv.GeneralError('Invalid username or password', 401));
+                    // return ftpServer.disconnectClient(connection.id).then();
                 }
             } else {
-                return resolve({root: this.ftpConfig.root});
+                return resolve({ root: this.ftpConfig.root });
             }
         });
 

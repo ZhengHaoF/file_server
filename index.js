@@ -99,7 +99,8 @@ function getNowPath(filePath) {
 
 //获取文件列表
 app.get('/list/:filePath', (req, res) => {
-    let nowPath = getNowPath(req.params.filePath)
+    let nowPath = getNowPath(req.params.filePath);
+    let {sta, end,aaa} = req.query;
     if (fs.existsSync(nowPath)) {
         //文件文件夹路径存在
         console.log('Directory exists!');
@@ -120,7 +121,11 @@ app.get('/list/:filePath', (req, res) => {
                             "suffix": path.extname(fileName),
                         })
                     });
-                    return res.json(data);
+                    let retList = {
+                        listNum:data.length,
+                        list:sta && end?data.slice(sta,end):data
+                    }
+                    return res.json(retList);
                 }
             });
         }catch (e) {

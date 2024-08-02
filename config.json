@@ -1,5 +1,7 @@
 {
     "rootPath": "D:/文件",
     "ftp":false,
-    "webdav":false
+    "webdav":false,
+    "username":"ZHF",
+    "password":"123456"
 }

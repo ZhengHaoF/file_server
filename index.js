@@ -1,13 +1,16 @@
-const express = require('express')
+const express = require('express');
 const http = require('http');
 const https = require('https');
-const cors = require('cors')
+const cors = require('cors');
 const fs = require('fs');
-const path = require('path')
-const app = express()
+const path = require('path');
+const app = express();
+const basicAuth = require('express-basic-auth');
 const rootPath = require("./config.json")['rootPath'];
 const startFtp = require("./config.json")['ftp'];
 const startWebDav = require("./config.json")['webdav'];
+const username = require("./config.json")['username'];
+const password = require("./config.json")['password'];
 const images = require('images');
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
@@ -58,7 +61,7 @@ const imageInterceptor = (req, res, next) => {
                         // 100 pixels wide, auto-scaled height
                         res.send(data)
                         let etime = new Date().getTime();
-                        console.log(path + " -> 处理耗时:" + (etime-stime))
+                        console.log(path + " -> 处理耗时:" + (etime - stime))
                     });
 
             } else {
@@ -69,7 +72,7 @@ const imageInterceptor = (req, res, next) => {
             // 不是图片请求，继续下一个中间件或路由
             next();
         }
-    }catch (e) {
+    } catch (e) {
         console.log(e);
         next();
     }
@@ -98,9 +101,12 @@ function getNowPath(filePath) {
 
 
 //获取文件列表
-app.get('/list/:filePath', (req, res) => {
+app.get('/list/:filePath', basicAuth({
+    users: {"admin":password},
+    challenge: true,
+}), (req, res) => {
     let nowPath = getNowPath(req.params.filePath);
-    let {sta, end,aaa} = req.query;
+    let {sta, end, aaa} = req.query;
     if (fs.existsSync(nowPath)) {
         //文件文件夹路径存在
         console.log('Directory exists!');
@@ -110,7 +116,7 @@ app.get('/list/:filePath', (req, res) => {
                     console.log(err)
                 }
                 let data = [];
-                if(files){
+                if (files) {
                     files.forEach(fileName => {
                         let fileInfo = fs.statSync(nowPath + '/' + fileName);
                         data.push({
@@ -122,13 +128,13 @@ app.get('/list/:filePath', (req, res) => {
                         })
                     });
                     let retList = {
-                        listNum:data.length,
-                        list:sta && end?data.slice(sta,end):data
+                        listNum: data.length,
+                        list: sta && end ? data.slice(sta, end) : data
                     }
                     return res.json(retList);
                 }
             });
-        }catch (e) {
+        } catch (e) {
             console.log(e)
         }
     } else {
@@ -141,7 +147,7 @@ app.get('/list/:filePath', (req, res) => {
 
 app.post('/delFile', (req, res) => {
     fs.unlinkSync(`${rootPath}${req.body.filePath}`)
-    return res.json({msg:'删除成功'});
+    return res.json({msg: '删除成功'});
 })
 
 let httpServer = http.createServer(app);
@@ -153,34 +159,34 @@ httpsServer.listen(SSLPORT, function () {
     console.log('HTTPS 服务运行在: https://localhost:%s', SSLPORT);
 });
 
-if(startWebDav){
+if (startWebDav) {
     //webdav server
     const WebdavCli = require("./webdav-server");
     const config = {
         // 设置WebDAV服务器的根文件夹路径
         path: rootPath,
         // 设置WebDAV服务器要监听的主机地址，留空则使用系统默认或配置文件中指定的
-        host:  "",
+        host: "",
         // 设置WebDAV服务器要监听的端口
-        port:  1900,
+        port: 1900,
         // 是否启用摘要认证，false表示不启用
-        digest:  false,
+        digest: false,
         // 设置基本/摘要认证的用户名
         username: "root",
         // 设置基本/摘要认证的密码
-        password:  "root",
+        password: "root",
         // 目录
         directory: "",
         //显示自动索引
-        autoIndex:  false,
+        autoIndex: false,
         // 是否启用HTTPS
         ssl: true,
         // SSL密钥文件路径，留空则表示不使用自定义密钥
         sslKey: "",
         // SSL证书文件路径，留空则表示不使用自定义证书
-        sslCert:  "",
+        sslCert: "",
         // 禁用认证，true表示禁用所有形式的认证
-        disableAuthentication:  true,
+        disableAuthentication: true,
         // 设置访问权限，这里指定为['all']，表示允许所有权限（具体实现可能依赖于服务器配置）
         /* 具体配置
             | 'all' | 所有权限 |
@@ -218,17 +224,18 @@ if(startWebDav){
         const webdavCliServer = await webdavCli.start();
         webdavCliServer.on('log', (ctx, fs, path, log) => console.log(log));
     };
-    run().then((res)=>{});
+    run().then((res) => {
+    });
 }
 
-if(startFtp){
+if (startFtp) {
     const FtpServer = require("./ftp-server2");
     const ftpServer = new FtpServer.FtpServer({
-        anonymous:true, //为true时候可匿名登录
-        port:21,
-        root:rootPath,
-        username:"root",
-        password:"root",
+        anonymous: true, //为true时候可匿名登录
+        port: 21,
+        root: rootPath,
+        username: "root",
+        password: "root",
     })
     ftpServer.ftpRun();
 }

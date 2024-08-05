@@ -102,7 +102,9 @@ function getNowPath(filePath) {
 
 //获取文件列表
 app.get('/list/:filePath', basicAuth({
-    users: {"admin":password},
+    users: {
+        [username]:password
+    },
     challenge: true,
 }), (req, res) => {
     let nowPath = getNowPath(req.params.filePath);
@@ -143,7 +145,6 @@ app.get('/list/:filePath', basicAuth({
     }
 
 })
-
 
 app.post('/delFile', (req, res) => {
     fs.unlinkSync(`${rootPath}${req.body.filePath}`)

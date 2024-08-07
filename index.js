@@ -100,13 +100,15 @@ function getNowPath(filePath) {
 }
 
 
+// , basicAuth({
+//     users: {
+//         [username]:password
+//     },
+//     challenge: true,
+// })
+
 //获取文件列表
-app.get('/list/:filePath', basicAuth({
-    users: {
-        [username]:password
-    },
-    challenge: true,
-}), (req, res) => {
+app.get('/list/:filePath', (req, res) => {
     let nowPath = getNowPath(req.params.filePath);
     let {sta, end, aaa} = req.query;
     if (fs.existsSync(nowPath)) {
@@ -127,6 +129,7 @@ app.get('/list/:filePath', basicAuth({
                             "isDirectory": fileInfo.isDirectory(),
                             "isFile": fileInfo.isFile(),
                             "suffix": path.extname(fileName),
+                            "mtime": fileInfo.mtime,
                         })
                     });
                     let retList = {

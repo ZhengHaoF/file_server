@@ -14,6 +14,15 @@ try {
         }
         fs.mkdirSync('imgCache');
     });
+
+    fs.rm("./logs", {recursive: true}, (e) => {
+        if (e) {
+            console.log("日志文件夹不存在")
+        } else {
+            console.log(`清空日志缓存成功`);
+        }
+        fs.mkdirSync('logs');
+    });
 } catch (err) {
     console.error(`清空文件夹失败： ${err}`);
 }

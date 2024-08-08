@@ -21,5 +21,4 @@ try {
 const Sql = require('./sqllite.js')
 let sql = new Sql.Sql();
 sql.init();
-sql.colse();
 console.error(`清空数据库成功`);

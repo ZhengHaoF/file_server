@@ -9,6 +9,7 @@ class Sql {
     init(){
         db.run('DROP TABLE IF EXISTS "image";');
         db.run('CREATE TABLE IF NOT EXISTS "image" ("psha256" text NOT NULL,"ctime" text,PRIMARY KEY ("psha256"));');
+        this.close();
     }
     insertInfo(psha256) {
         db.run(
@@ -52,7 +53,7 @@ class Sql {
     cleanOldData(day = 10){
         let t = day * 24 * 26 * 60 * 1000;
     }
-    colse(){
+    close(){
         db.close()
     }
 }

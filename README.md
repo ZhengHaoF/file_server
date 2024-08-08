@@ -11,16 +11,28 @@
 3. 修改config.json中需要共享的目录（不能把根目录设置为共享目录）
 4. 使用 `node index.js` 运行
 
+### 配置文件说明
+```json
+{
+    "rootPath": "G:/图片",  //文件夹位置
+    "ftp":false,  //是否启用FTP
+    "webdav":false, //是否启用webdav
+    "username":"",  //访问用户名（暂时无效）
+    "password":"",  //访问密码（暂时无效）
+    "imgCache":"./imgCache" //图片缩略图缓存目录
+}
+```
+
 ### 在线预览
 - 支持常见图片预览
 - 支持常见视频预览
 - 支持调用外部Vlc播放器
 - 可以直接预览缩略图
 
-### WebDav（测试）
+### WebDav（弃用）
 支持WebDav，默认端口为1900，在`config.json`中把`webdav`改为`true`即可
 
-### WebDav（测试）
+### WebDav（弃用）
 支持FTP，默认端口为21，在`config.json`中把`ftp`改为`true`即可
 
 ### 其他说明
@@ -32,12 +44,3 @@
 https://github.com/ZhengHaoF/file_server_web
 
 ## 注意：不能把根目录设置为共享目录
-
-#### 列表模式
-![img.png](img%2Fimg.jpg)
-#### 图片模式
-![img_1.png](img%2Fimg1.jpg)
-#### 设置功能
-![img_2.png](img%2Fimg2.jpg)
-#### 图片查看
-![img_3.png](img%2Fimg3.jpg)

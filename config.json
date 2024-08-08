@@ -1,7 +1,8 @@
 {
-    "rootPath": "D:/文件",
+    "rootPath": "G:/图片",
     "ftp":false,
     "webdav":false,
     "username":"",
-    "password":""
+    "password":"",
+    "imgCache":"./imgCache"
 }

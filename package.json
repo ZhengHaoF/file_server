@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "init": "node.exe init.js"
   },
   "keywords": [],
   "author": "",
@@ -16,8 +17,10 @@
     "express-basic-auth": "^1.2.1",
     "ftp-srv": "^4.6.3",
     "images": "^3.2.4",
+    "log4js": "^6.9.1",
     "netmask": "^2.0.2",
     "sharp": "^0.33.3",
+    "sqlite3": "^5.1.7",
     "webdav-server": "^2.6.2"
   },
   "engines": {

@@ -3,6 +3,26 @@ const http = require('http');
 const https = require('https');
 const cors = require('cors');
 const fs = require('fs');
+const crypto = require('crypto');
+const log4js = require("log4js");
+log4js.configure({
+        "appenders": {
+            "console": {"type": "console"},
+            "file": {
+                "type": "file",
+                "filename": "logs/app.log",
+                "maxLogSize": 10485760,
+                "backups": 3,
+                "compress": true
+            }
+        },
+        "categories": {
+            "default": {"appenders": ["console", "file"], "level": "info"}
+        }
+    }
+);
+const logger = log4js.getLogger();
+
 const path = require('path');
 const app = express();
 const basicAuth = require('express-basic-auth');
@@ -11,6 +31,7 @@ const startFtp = require("./config.json")['ftp'];
 const startWebDav = require("./config.json")['webdav'];
 const username = require("./config.json")['username'];
 const password = require("./config.json")['password'];
+const imgCache = require("./config.json")['imgCache'];
 const images = require('images');
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
@@ -25,44 +46,78 @@ app.use(cors())
 app.use(express.static('web'))
 
 
+const Sql = require('./sqllite.js');
+const sql = new Sql.Sql();
 // 拦截图片请求的中间件
 const imageInterceptor = (req, res, next) => {
-
+    logger.info(`收到请求：${req.url}`);
     try {
-
-        let path = req.path.split("!")[0];
+        let filePath = req.path.split("!")[0];
         // 定义你想要拦截的图片扩展名
         const imageExtensions = /.(jpg|jpeg|png|gif|svg)$/i;
         // 检查请求的 URL 是否以图片扩展名结尾
-        if (imageExtensions.test(path)) {
+        if (imageExtensions.test(filePath)) {
 
             let size = req.path.split("!")[1] || "";
             // 这里可以添加你想要的逻辑
             if (size) {
                 let w = size.split("x")[0];
                 let h = size.split("x")[1];
-                path = path.replace("/getFile", "");
-                path = decodeURIComponent(path)
-                path = rootPath + path
-                // console.log(`图片处理路径: ${path}`);
-                // 你可以选择直接发送响应，或者继续处理请求（调用 next()）
-                res.setHeader('Content-Type', 'application/octet-stream');
-                res.setHeader('Content-Disposition', 'attachment; filename=0.jpg');
-                let stime = new Date().getTime();
-                sharp(path)
-                    .resize({
-                            width: Number(w),
-                            height: Number(h),
-                            fit: sharp.fit.inside
-                        },
-                    )
-                    .toBuffer()
-                    .then(data => {
-                        // 100 pixels wide, auto-scaled height
-                        res.send(data)
-                        let etime = new Date().getTime();
-                        console.log(path + " -> 处理耗时:" + (etime - stime))
-                    });
+                filePath = filePath.replace("/getFile", "");
+                filePath = decodeURIComponent(filePath)
+                filePath = rootPath + filePath
+
+                let ext = path.extname(filePath);
+                const hash = crypto.createHash('sha256');// sha256加密
+                hash.update(filePath);
+                const hashDigest = hash.digest('hex');
+                logger.info(`图片路径哈希: ${hashDigest}`);
+                sql.selectInfo(hashDigest).then((sqlRes) => {
+                    if (!sqlRes) {
+                        //如果数据库里没有
+                        res.setHeader('Content-Type', 'application/octet-stream');
+                        res.setHeader('Content-Disposition', 'attachment; filename=0.jpg');
+                        getCompressImg(filePath, w, h).then((getImgRes) => {
+                            res.send(getImgRes);
+                            fs.writeFile(`${imgCache}/${hashDigest}${ext}`, getImgRes, (err) => {
+                                if (err) {
+                                    console.error('写入文件时发生错误', err);
+                                    return;
+                                }
+                                logger.info(`${hashDigest}${ext}已成功保存`)
+                            })
+                        }).catch((err)=>{
+                            logger.error(filePath + ` -> 处理失败:${err}`)
+                        })
+                        sql.insertInfo(hashDigest);
+                    } else {
+                        logger.info(`${hashDigest}${ext} -> 已存在数据库中`)
+                        sql.updateInfo(hashDigest);
+                        fs.readFile(`${imgCache}/${hashDigest}${ext}`, (err, data) => {
+                            res.setHeader('Content-Type', 'application/octet-stream');
+                            res.setHeader('Content-Disposition', 'attachment; filename=0.jpg');
+                            if (err) {
+                                //文件不存在就重新生成
+                                logger.info(`${hashDigest}${ext} -> 缓存文件不存在`)
+                                getCompressImg(filePath, w, h).then((getImgRes) => {
+                                    res.send(getImgRes);
+                                    fs.writeFile(`./imgCache/${hashDigest}${ext}`, getImgRes, (err) => {
+                                        if (err) {
+                                            logger.error(`写入文件时发生错误: ${err}`)
+                                            return;
+                                        }
+                                        logger.info(`${hashDigest}${ext} -> 已成功保存`)
+                                        res.status(404).send();
+                                    })
+                                });
+                                return;
+                            }
+                            res.send(data);
+                        })
+                    }
+                }).catch((err) => {
+
+                })
 
             } else {
                 // 或者继续处理请求（如果你只是想记录日志）
@@ -73,11 +128,36 @@ const imageInterceptor = (req, res, next) => {
             next();
         }
     } catch (e) {
-        console.log(e);
+        logger.error(`图片处理错误:${e}`)
         next();
     }
 
 };
+
+function getCompressImg(filePath, w, h) {
+    logger.info(`${filePath} -> 图片开始处理，最大宽度${w}最大高度${h}`)
+    // 你可以选择直接发送响应，或者继续处理请求（调用 next()）
+    return new Promise((resolve, reject) => {
+        let stime = new Date().getTime();
+        sharp(filePath)
+            .resize({
+                    width: Number(w),
+                    height: Number(h),
+                    fit: sharp.fit.inside
+                },
+            )
+            .toBuffer()
+            .then(data => {
+                // 100 pixels wide, auto-scaled height
+                resolve(data);
+                let etime = new Date().getTime();
+                logger.info(filePath + " -> 处理耗时:" + (etime - stime))
+            }).catch((err) => {
+            reject(err);
+        });
+    })
+
+}
 
 
 // 使用中间件拦截图片请求
@@ -95,7 +175,7 @@ function getNowPath(filePath) {
     }
     filePath = filePath.replace(/__/g, "/")
     nowPath = rootPath + filePath;
-    console.log(nowPath)
+    logger.info(nowPath)
     return nowPath;
 }
 
@@ -113,11 +193,10 @@ app.get('/list/:filePath', (req, res) => {
     let {sta, end, aaa} = req.query;
     if (fs.existsSync(nowPath)) {
         //文件文件夹路径存在
-        console.log('Directory exists!');
         try {
             fs.readdir(nowPath, (err, files) => {
                 if (err) {
-                    console.log(err)
+                    logger.error(`${nowPath}文件夹读取错误：${err}`);
                 }
                 let data = [];
                 if (files) {
@@ -140,11 +219,12 @@ app.get('/list/:filePath', (req, res) => {
                 }
             });
         } catch (e) {
-            console.log(e)
+            logger.error(`${nowPath}文件夹返回异常：${e}`);
+            res.status(404).send("文件夹读取错误");
         }
     } else {
         //文件文件夹路径不存在
-        return res.status(404).send("文件夹不存在")
+        return res.status(404).send("文件夹不存在");
     }
 
 })

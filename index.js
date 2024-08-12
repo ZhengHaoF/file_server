@@ -89,7 +89,7 @@ const imageInterceptor = (req, res, next) => {
                         }).catch((err)=>{
                             logger.error(filePath + ` -> 处理失败:${err}`)
                         })
-                        sql.insertInfo(hashDigest);
+                        sql.insertInfo(hashDigest,ext);
                     } else {
                         logger.info(`${hashDigest}${ext} -> 已存在数据库中`)
                         sql.updateInfo(hashDigest);
@@ -190,7 +190,7 @@ function getNowPath(filePath) {
 //获取文件列表
 app.get('/list/:filePath', (req, res) => {
     let nowPath = getNowPath(req.params.filePath);
-    let {sta, end, aaa} = req.query;
+    let {sta, end} = req.query;
     if (fs.existsSync(nowPath)) {
         //文件文件夹路径存在
         try {
@@ -232,6 +232,12 @@ app.get('/list/:filePath', (req, res) => {
 app.post('/delFile', (req, res) => {
     fs.unlinkSync(`${rootPath}${req.body.filePath}`)
     return res.json({msg: '删除成功'});
+})
+
+app.get('/cleanOldData/:day', (req, res) => {
+    let day = req.params.day;
+    sql.cleanOldData(day);
+    res.send("清理旧文件成功");
 })
 
 let httpServer = http.createServer(app);

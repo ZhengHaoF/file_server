@@ -35,6 +35,9 @@
 ### WebDav（弃用）
 支持FTP，默认端口为21，在`config.json`中把`ftp`改为`true`即可
 
+### 打包说明
+使用npm run build 进行打包，打包后的文件存放在`dist`文件夹下，并且会自动压缩成`build-ZIP.tar.gz`文件，把该文件复制到其他设备既可运行
+
 ### 其他说明
 因为浏览器对视屏支持有限，目前主流浏览器大多只支持mp4,ogg,webm等基础格式，详细可以看这里：https://developer.mozilla.org/zh-CN/docs/Web/Media/Formats/Containers
 而大多数国产手机浏览器都有视屏小窗之类的功能，对视屏的兼容性是网页所不能及的，所以建议使用网页播放器，方便浏览器调用自带的播放器，这样体验最好。

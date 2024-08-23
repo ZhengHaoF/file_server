@@ -1,9 +1,10 @@
 {
   "name": "file-serve",
   "version": "1.0.0",
-  "description": "",
+  "description": "针对大量查看NAS图片的需求开发，不改变文件结构，支持实时压缩图片。体验超丝滑\r ### 直接运行\r 1. 从 https://github.com/ZhengHaoF/file_server/releases/tag/beta 下载对应的压缩包\r 2. 修改config.json中需要共享的目录（不能把根目录设置为共享目录）\r 3. 双击`启动.bat` 运行",
   "main": "index.js",
   "scripts": {
+    "build": "echo 开始打包 && rd /s /q dist && node.exe init.js && rollup -c && copy config.json dist && copy 启动.bat dist && copy 启动.exe dist && copy node.exe dist && copy imgCache.db dist && xcopy cert dist\\cert\\ /E /I && xcopy web dist\\web\\ /E /I &&  mkdir dist\\imgCache && cd dist && npm init -y && npm install sharp sqlite3 && tar -czvf build-ZIP.tar.gz ./*",
     "test": "echo \"Error: no test specified\" && exit 1",
     "init": "node.exe init.js"
   },
@@ -25,5 +26,13 @@
   },
   "engines": {
     "node": ">=18.17.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^26.0.1",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "rollup": "^4.20.0",
+    "rollup-plugin-ignore": "^1.0.10"
   }
 }

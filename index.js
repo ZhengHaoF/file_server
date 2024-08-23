@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const https = require('https');
+const path = require('path');
 const cors = require('cors');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -23,16 +24,18 @@ log4js.configure({
 );
 const logger = log4js.getLogger();
 
-const path = require('path');
 const app = express();
 const basicAuth = require('express-basic-auth');
-const rootPath = require("./config.json")['rootPath'];
-const startFtp = require("./config.json")['ftp'];
-const startWebDav = require("./config.json")['webdav'];
-const username = require("./config.json")['username'];
-const password = require("./config.json")['password'];
-const imgCache = require("./config.json")['imgCache'];
-const images = require('images');
+const config = JSON.parse(fs.readFileSync("config.json", 'utf8'));
+
+
+const rootPath = config['rootPath'];
+const startFtp = config['ftp'];
+const startWebDav = config['webdav'];
+const username = config['username'];
+const password = config['password'];
+const imgCache = config['imgCache'];
+// const images = require('images');
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
 let bodyParser = require('body-parser');
@@ -159,12 +162,10 @@ function getCompressImg(filePath, w, h) {
 
 }
 
-
 // 使用中间件拦截图片请求
 app.use(imageInterceptor);
 //托管静态文件
 app.use('/getFile', express.static(rootPath))
-
 //获取当前文件夹
 function getNowPath(filePath) {
     let nowPath = "";

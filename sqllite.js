@@ -1,5 +1,6 @@
 const fs = require('fs');
-const imgCache = require("./config.json")['imgCache'];
+const config = JSON.parse(fs.readFileSync("config.json", 'utf8'));
+const imgCache = config['imgCache'];
 const sqlite3 = require('sqlite3').verbose();
 let db;
 

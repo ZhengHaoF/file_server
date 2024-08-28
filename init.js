@@ -2,9 +2,10 @@
  * 初始化整个项目,清空数据库，删除缓存目录
  */
 
-const fs = require('fs');
-const path = require('path');
-
+import stripBom from "strip-bom";
+import fs from 'fs';
+import path from 'path';
+const config = JSON.parse(stripBom(fs.readFileSync("config.json", 'utf8')));
 try {
     fs.rm("./imgCache", {recursive: true}, (e) => {
         if (e) {
@@ -27,7 +28,8 @@ try {
     console.error(`清空文件夹失败： ${err}`);
 }
 
-const Sql = require('./sqllite.js')
-let sql = new Sql.Sql();
+import { Sql } from "./sqllite.js"
+
+let sql = new Sql(config['imgCache']);
 sql.init();
 console.error(`清空数据库成功`);

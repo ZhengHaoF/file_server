@@ -1,11 +1,28 @@
-const express = require('express');
-const http = require('http');
-const https = require('https');
-const path = require('path');
-const cors = require('cors');
-const fs = require('fs');
-const crypto = require('crypto');
-const log4js = require("log4js");
+
+// 引入 Node.js 核心模块
+import express from 'express';
+import http from 'http';
+import https from 'https';
+import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
+
+// 引入第三方 npm 包
+import cors from 'cors';
+import stripBom from 'strip-bom';
+import bodyParser from 'body-parser'; // 注意：body-parser 已被 express 内置的中间件替代，建议使用 express.json() 和 express.urlencoded()
+import sharp from 'sharp';
+import log4js from 'log4js';
+import basicAuth from 'express-basic-auth';
+
+// 由于 express 4.16+ 版本中内置了对 JSON 和 URL-encoded 解析的支持，
+// 因此你可能不再需要单独引入 bodyParser，而是可以这样做：
+// app.use(express.json()); // 用于解析 JSON 格式的请求体
+// app.use(express.urlencoded({ extended: true })); // 用于解析 URL-encoded 格式的请求体
+
+// 注意：由于你的项目中可能仍然需要处理旧版本的 express 或特定的用例，
+// 我保留了 bodyParser 的 import 语句，但建议查看你的 express 版本并考虑是否可以使用内置的中间件。
+
 log4js.configure({
         "appenders": {
             "console": {"type": "console"},
@@ -23,12 +40,8 @@ log4js.configure({
     }
 );
 const logger = log4js.getLogger();
-
 const app = express();
-const basicAuth = require('express-basic-auth');
-const config = JSON.parse(fs.readFileSync("config.json", 'utf8'));
-
-
+const config = JSON.parse(stripBom(fs.readFileSync("config.json", 'utf8')));
 const rootPath = config['rootPath'];
 const startFtp = config['ftp'];
 const startWebDav = config['webdav'];
@@ -38,8 +51,6 @@ const imgCache = config['imgCache'];
 // const images = require('images');
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
-let bodyParser = require('body-parser');
-const sharp = require("sharp");
 app.use(bodyParser());
 let credentials = {key: privateKey, cert: certificate};
 let PORT = 3000;
@@ -48,9 +59,8 @@ let SSLPORT = 3001;
 app.use(cors())
 app.use(express.static('web'))
 
-
-const Sql = require('./sqllite.js');
-const sql = new Sql.Sql();
+import { Sql } from "./sqllite.js"
+const sql = new Sql(imgCache);
 // 拦截图片请求的中间件
 const imageInterceptor = (req, res, next) => {
     logger.info(`收到请求：${req.url}`);

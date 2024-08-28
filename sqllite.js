@@ -1,11 +1,11 @@
-const fs = require('fs');
-const config = JSON.parse(fs.readFileSync("config.json", 'utf8'));
-const imgCache = config['imgCache'];
-const sqlite3 = require('sqlite3').verbose();
-let db;
+import fs from 'fs';
+import sqlite3 from 'sqlite3';
 
-class Sql {
+let db,imgCache;
+
+export class Sql {
     constructor(config) {
+        imgCache = config;
         db = new sqlite3.Database('imgCache.db');
     }
 
@@ -85,7 +85,4 @@ class Sql {
         db.close()
     }
 }
-exports.Sql = Sql;
-// let sql = new Sql();
-// sql.insertInfo("1","1","1");
-// sql.selectInfo("1");
+export default Sql;

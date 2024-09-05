@@ -159,6 +159,9 @@ function getCompressImg(filePath, w, h) {
                     fit: sharp.fit.inside
                 },
             )
+            .jpeg({
+                progressive:true,
+            })
             .toBuffer()
             .then(data => {
                 // 100 pixels wide, auto-scaled height

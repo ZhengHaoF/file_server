@@ -77,12 +77,11 @@ const imageInterceptor = (req, res, next) => {
                 let w = size.split("x")[0];
                 let h = size.split("x")[1];
                 filePath = filePath.replace("/getFile", "");
-                filePath = decodeURIComponent(filePath)
-                filePath = rootPath + filePath
-
+                filePath = decodeURIComponent(filePath);
+                filePath = rootPath + filePath;
                 let ext = path.extname(filePath);
                 const hash = crypto.createHash('sha256');// sha256加密
-                hash.update(filePath);
+                hash.update(filePath + `!${size}`);
                 const hashDigest = hash.digest('hex');
                 logger.info(`图片路径哈希: ${hashDigest}`);
                 sql.selectInfo(hashDigest).then((sqlRes) => {
@@ -156,7 +155,8 @@ function getCompressImg(filePath, w, h) {
             .resize({
                     width: Number(w),
                     height: Number(h),
-                    fit: sharp.fit.inside
+                    fit: sharp.fit.inside,
+                    withoutEnlargement: true
                 },
             )
             .jpeg({

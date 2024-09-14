@@ -1,5 +1,5 @@
 {
-    "rootPath": "D:/文件",
+    "rootPath": "./files",
     "ftp":false,
     "webdav":false,
     "username":"",

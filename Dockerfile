@@ -39,4 +39,5 @@ COPY web ./web/
 
 
 # 设置容器启动时执行的命令
-CMD ["node", "index.js"]
+CMD ["sh", "-c", "node clean.js && node index.js"]
+

@@ -43,6 +43,12 @@ const logger = log4js.getLogger();
 const app = express();
 const config = JSON.parse(stripBom(fs.readFileSync("config.json", 'utf8')));
 const rootPath = config['rootPath'];
+if(!fs.existsSync(rootPath)){
+    logger.error(`文件夹不存在，停止运行：${rootPath}`);
+    process.exit()
+}
+
+
 const startFtp = config['ftp'];
 const startWebDav = config['webdav'];
 const username = config['username'];

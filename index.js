@@ -54,6 +54,7 @@ const startWebDav = config['webdav'];
 const username = config['username'];
 const password = config['password'];
 const imgCache = config['imgCache'];
+const restartPwd = config['restartPwd'];
 // const images = require('images');
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
@@ -253,6 +254,18 @@ app.post('/delFile', (req, res) => {
     fs.unlinkSync(`${rootPath}${req.body.filePath}`)
     return res.json({msg: '删除成功'});
 })
+
+
+app.post('/restartServer', (req, res) => {
+    if (String(req.body.pwd) === String(restartPwd)) {
+        res.json({msg: '开始重启'});
+        process.exit();
+    } else {
+        return res.json({msg: '密码错误'});
+    }
+})
+
+
 
 app.get('/cleanOldData/:day', (req, res) => {
     let day = req.params.day;

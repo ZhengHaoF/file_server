@@ -5,7 +5,7 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "build": "echo 开始打包 && (if exist dist (rd /s /q dist) else echo dist 文件夹不存在。) && node.exe init.js && rollup -c && copy config.json dist && copy 启动.bat dist && copy 启动.exe dist && copy node.exe dist && copy imgCache.db dist && xcopy cert dist\\cert\\ /E /I && xcopy web dist\\web\\ /E /I &&  mkdir dist\\imgCache && cd dist && npm init -y && npm install sharp sqlite3",
+    "build": "echo 开始打包 && (if exist dist (rd /s /q dist) else echo dist 文件夹不存在。) && node.exe init.js && rollup -c && copy config.json dist && copy 启动.bat dist && copy node.exe dist && copy imgCache.db dist && xcopy cert dist\\cert\\ /E /I && xcopy web dist\\web\\ /E /I &&  mkdir dist\\imgCache && cd dist && npm init -y && npm install sharp sqlite3",
     "upbuild": "echo 开始打更新包 && (if exist dist (rd /s /q dist) else echo dist 文件夹不存在。) && rollup -c && xcopy web dist\\web\\ /E /I",
     "test": "echo \"Error: no test specified\" && exit 1",
     "init": "node.exe init.js"

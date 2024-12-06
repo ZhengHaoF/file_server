@@ -32,6 +32,7 @@ COPY rollup.config.mjs ./
 COPY sqllite.js ./
 COPY webdav-server.js ./
 COPY webdav-test.js ./
+COPY start.js ./
 
 
 # 复制目录及其内容到镜像的根目录下
@@ -60,5 +61,5 @@ WORKDIR /usr/src/app
 COPY --from=build /usr/src/app .
 
 # 设置容器启动时执行的命令
-CMD ["sh", "-c", "node clean.js && node index.js"]
+CMD ["sh", "-c", "node clean.js && node start.js"]
 

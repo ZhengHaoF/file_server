@@ -1,1 +1,1 @@
-node.exe index.js
+node.exe start.js

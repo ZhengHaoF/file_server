@@ -10,15 +10,11 @@ import crypto from 'crypto';
 // 引入第三方 npm 包
 import cors from 'cors';
 import stripBom from 'strip-bom';
-import bodyParser from 'body-parser'; // 注意：body-parser 已被 express 内置的中间件替代，建议使用 express.json() 和 express.urlencoded()
 import sharp from 'sharp';
 import log4js from 'log4js';
 import basicAuth from 'express-basic-auth';
 
-// 由于 express 4.16+ 版本中内置了对 JSON 和 URL-encoded 解析的支持，
-// 因此你可能不再需要单独引入 bodyParser，而是可以这样做：
-// app.use(express.json()); // 用于解析 JSON 格式的请求体
-// app.use(express.urlencoded({ extended: true })); // 用于解析 URL-encoded 格式的请求体
+
 
 // 注意：由于你的项目中可能仍然需要处理旧版本的 express 或特定的用例，
 // 我保留了 bodyParser 的 import 语句，但建议查看你的 express 版本并考虑是否可以使用内置的中间件。
@@ -58,14 +54,15 @@ const restartPwd = config['restartPwd'];
 // const images = require('images');
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
-app.use(bodyParser());
+// app.use(bodyParser());
 let credentials = {key: privateKey, cert: certificate};
 let PORT = 3000;
 let SSLPORT = 3001;
 // const mime = require("./mime.json");
 app.use(cors())
 app.use(express.static('web'))
-
+app.use(express.json()); // 用于解析 JSON 格式的请求体
+app.use(express.urlencoded({ extended: true })); // 用于解析 URL-encoded 格式的请求体
 import { Sql } from "./sqllite.js"
 const sql = new Sql(imgCache);
 // 拦截图片请求的中间件
@@ -209,9 +206,10 @@ function getNowPath(filePath) {
 // })
 
 //获取文件列表
-app.get('/list/:filePath', (req, res) => {
+app.get('/list/:filePath(*)', (req, res) => {
     let nowPath = getNowPath(req.params.filePath);
     let {sta, end} = req.query;
+    console.log(req.params.filePath,123456)
     if (fs.existsSync(nowPath)) {
         //文件文件夹路径存在
         try {

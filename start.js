@@ -1,21 +1,39 @@
 import {spawn} from 'child_process'
 
+// 添加最大重试次数
+const MAX_RETRIES = 5;
+let retryCount = 0;
+
 function startSubprocess() {
-    // 创建一个新的子进程来运行index.js
     const subprocess = spawn('node', ['index.js'], {
-        stdio: 'inherit', // 子进程使用父进程的输入输出
-        detached: false   // 默认值，子进程在父进程退出时也会退出
+        stdio: 'inherit',
+        detached: false
     });
 
-// 监听子进程退出事件
     subprocess.on('close', (code) => {
         console.log(`子进程退出，退出码 ${code}`);
-        startSubprocess();
+        
+        // 添加重试次数检查
+        if (retryCount < MAX_RETRIES) {
+            retryCount++;
+            console.log(`正在重试... (${retryCount}/${MAX_RETRIES})`);
+            startSubprocess();
+        } else {
+            console.error('达到最大重试次数，停止重试');
+            process.exit(1);
+        }
     });
 
-// 监听子进程错误事件
     subprocess.on('error', (err) => {
         console.error('启动子进程失败:', err);
+        process.exit(1);
+    });
+
+    // 添加进程退出时的清理处理
+    process.on('SIGINT', () => {
+        console.log('收到终止信号，关闭子进程...');
+        subprocess.kill();
+        process.exit();
     });
 }
 

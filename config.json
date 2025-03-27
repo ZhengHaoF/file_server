@@ -1,9 +1,6 @@
 {
     "rootPath": "D:/文件",
-    "ftp":false,
-    "webdav":false,
-    "username":"",
-    "password":"",
+
     "imgCache":"./imgCache",
     "restartPwd":"123456"
 }

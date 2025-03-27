@@ -43,7 +43,19 @@ if(!fs.existsSync(rootPath)){
     logger.error(`文件夹不存在，停止运行：${rootPath}`);
     process.exit()
 }
+
 const imgCache = config['imgCache'];
+// 新增目录创建逻辑
+if (!fs.existsSync(imgCache)) {
+    try {
+        fs.mkdirSync(imgCache, { recursive: true });
+        logger.info(`自动创建图片缓存目录：${imgCache}`);
+    } catch (err) {
+        logger.error(`创建缓存目录失败：${err.message}`);
+        process.exit();
+    }
+}
+
 const restartPwd = config['restartPwd'];
 // const images = require('images');
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');

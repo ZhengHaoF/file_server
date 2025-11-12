@@ -1,6 +1,5 @@
 {
-    "rootPath": "D:/文件",
-
+    "rootPath": "G:/下载",
     "imgCache":"./imgCache",
     "restartPwd":"123456"
 }

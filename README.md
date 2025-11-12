@@ -15,11 +15,8 @@
 ```json
 {
     "rootPath": "G:/图片",  //文件夹位置
-    "ftp":false,  //是否启用FTP
-    "webdav":false, //是否启用webdav
-    "username":"",  //访问用户名（暂时无效）
-    "password":"",  //访问密码（暂时无效）
-    "imgCache":"./imgCache" //图片缩略图缓存目录
+    "imgCache":"./imgCache", //图片缩略图缓存目录
+    "restartPwd":"123456"  //服务器重启密码
 }
 ```
 
@@ -28,12 +25,6 @@
 - 支持常见视频预览
 - 支持调用外部Vlc播放器
 - 可以直接预览缩略图
-
-### WebDav（弃用）
-支持WebDav，默认端口为1900，在`config.json`中把`webdav`改为`true`即可
-
-### WebDav（弃用）
-支持FTP，默认端口为21，在`config.json`中把`ftp`改为`true`即可
 
 ### 打包说明
 使用npm run build 进行打包，打包后的文件存放在`dist`文件夹下，并且会自动压缩成`build-ZIP.tar.gz`文件，把该文件复制到其他设备既可运行

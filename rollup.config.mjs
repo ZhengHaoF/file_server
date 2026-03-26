@@ -19,7 +19,7 @@ export default [
         ],
         external: [ // 排除不需要打包的依赖
             'sharp',
-            'sqlite3',
+            'better-sqlite3',
             './config.json'
         ],
     },
@@ -36,7 +36,7 @@ export default [
         ],
         external: [ // 排除不需要打包的依赖
             'sharp',
-            'sqlite3',
+            'better-sqlite3',
             './config.json'
         ],
     },
@@ -53,7 +53,7 @@ export default [
         ],
         external: [ // 排除不需要打包的依赖
             'sharp',
-            'sqlite3',
+            'better-sqlite3',
             './config.json'
         ],
     },
@@ -70,7 +70,7 @@ export default [
         ],
         external: [ // 排除不需要打包的依赖
             'sharp',
-            'sqlite3',
+            'better-sqlite3',
             './config.json'
         ],
     }

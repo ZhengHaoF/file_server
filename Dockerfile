@@ -54,7 +54,7 @@ RUN cp -r web dist/web
 RUN mkdir -p dist/imgCache
 RUN cd dist
 RUN npm init -y
-RUN npm install sharp sqlite3
+RUN npm install sharp better-sqlite3
 
 FROM node:18-alpine
 WORKDIR /usr/src/app

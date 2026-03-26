@@ -71,6 +71,13 @@ app.use(express.json()); // 用于解析 JSON 格式的请求体
 app.use(express.urlencoded({ extended: true })); // 用于解析 URL-encoded 格式的请求体
 import { Sql } from "./sqllite.js"
 const sql = new Sql(imgCache);
+// 路径安全验证函数
+const validatePath = (targetPath, basePath) => {
+    const normalizedPath = path.normalize(targetPath);
+    const normalizedBase = path.normalize(basePath);
+    return normalizedPath.startsWith(normalizedBase);
+};
+
 // 拦截图片请求的中间件
 const imageInterceptor = (req, res, next) => {
     logger.info(`收到请求：${req.url}`);
@@ -88,58 +95,63 @@ const imageInterceptor = (req, res, next) => {
                 let h = size.split("x")[1];
                 filePath = filePath.replace("/getFile", "");
                 filePath = decodeURIComponent(filePath);
-                filePath = rootPath + filePath;
+                const fullPath = path.join(rootPath, filePath);
+                
+                if (!validatePath(fullPath, rootPath)) {
+                    logger.warn(`路径遍历攻击尝试被拦截：${filePath}`);
+                    return res.status(403).json({msg: '非法路径访问'});
+                }
+                filePath = fullPath;
                 let ext = path.extname(filePath);
                 const hash = crypto.createHash('sha256');// sha256加密
                 hash.update(filePath + `!${size}`);
                 const hashDigest = hash.digest('hex');
                 logger.info(`图片路径哈希: ${hashDigest}`);
-                sql.selectInfo(hashDigest).then((sqlRes) => {
-                    if (!sqlRes) {
-                        //如果数据库里没有
-                        res.setHeader('Content-Type', 'application/octet-stream');
-                        res.setHeader('Content-Disposition', 'attachment; filename=0.jpg');
-                        getCompressImg(filePath, w, h).then((getImgRes) => {
-                            res.send(getImgRes);
-                            fs.writeFile(`${imgCache}/${hashDigest}${ext}`, getImgRes, (err) => {
-                                if (err) {
-                                    console.error('写入文件时发生错误', err);
-                                    return;
-                                }
-                                logger.info(`${hashDigest}${ext}已成功保存`)
-                            })
-                        }).catch((err)=>{
-                            logger.error(filePath + ` -> 处理失败:${err}`)
-                        })
-                        sql.insertInfo(hashDigest,ext);
-                    } else {
-                        logger.info(`${hashDigest}${ext} -> 已存在数据库中`)
-                        sql.updateInfo(hashDigest);
-                        fs.readFile(`${imgCache}/${hashDigest}${ext}`, (err, data) => {
-                            res.setHeader('Content-Type', 'application/octet-stream');
-                            res.setHeader('Content-Disposition', 'attachment; filename=0.jpg');
+                const sqlRes = sql.selectInfo(hashDigest);
+                if (!sqlRes) {
+                    //如果数据库里没有
+                    res.setHeader('Content-Type', 'application/octet-stream');
+                    res.setHeader('Content-Disposition', 'attachment; filename=0.jpg');
+                    getCompressImg(filePath, w, h).then((getImgRes) => {
+                        res.send(getImgRes);
+                        fs.writeFile(`${imgCache}/${hashDigest}${ext}`, getImgRes, (err) => {
                             if (err) {
-                                //文件不存在就重新生成
-                                logger.info(`${hashDigest}${ext} -> 缓存文件不存在`)
-                                getCompressImg(filePath, w, h).then((getImgRes) => {
-                                    res.send(getImgRes);
-                                    fs.writeFile(`./imgCache/${hashDigest}${ext}`, getImgRes, (err) => {
-                                        if (err) {
-                                            logger.error(`写入文件时发生错误: ${err}`)
-                                            return;
-                                        }
-                                        logger.info(`${hashDigest}${ext} -> 已成功保存`)
-                                        res.status(404).send();
-                                    })
-                                });
+                                logger.error(`写入缓存文件失败: ${err.message}`);
                                 return;
                             }
-                            res.send(data);
+                            logger.info(`${hashDigest}${ext}已成功保存`)
                         })
-                    }
-                }).catch((err) => {
-
-                })
+                    }).catch((err) => {
+                        logger.error(`${filePath} -> 图片处理失败: ${err.message}`);
+                        res.status(500).json({msg: '图片处理失败'});
+                    })
+                    sql.insertInfo(hashDigest,ext);
+                } else {
+                    logger.info(`${hashDigest}${ext} -> 已存在数据库中`)
+                    sql.updateInfo(hashDigest);
+                    fs.readFile(`${imgCache}/${hashDigest}${ext}`, (err, data) => {
+                        res.setHeader('Content-Type', 'application/octet-stream');
+                        res.setHeader('Content-Disposition', 'attachment; filename=0.jpg');
+                        if (err) {
+                            logger.info(`${hashDigest}${ext} -> 缓存文件不存在`)
+                            getCompressImg(filePath, w, h).then((getImgRes) => {
+                                res.send(getImgRes);
+                                fs.writeFile(`${imgCache}/${hashDigest}${ext}`, getImgRes, (err) => {
+                                    if (err) {
+                                        logger.error(`写入缓存文件失败: ${err.message}`);
+                                        return;
+                                    }
+                                    logger.info(`${hashDigest}${ext} -> 已成功保存`)
+                                })
+                            }).catch((err) => {
+                                logger.error(`${filePath} -> 图片处理失败: ${err.message}`);
+                                res.status(500).json({msg: '图片处理失败'});
+                            });
+                            return;
+                        }
+                        res.send(data);
+                    })
+                }
 
             } else {
                 // 或者继续处理请求（如果你只是想记录日志）
@@ -198,7 +210,14 @@ function getNowPath(filePath) {
         filePath = filePath.replace(/\$/g, "")
     }
     filePath = filePath.replace(/__/g, "/")
-    nowPath = rootPath + filePath;
+    const fullPath = path.join(rootPath, filePath);
+    
+    if (!validatePath(fullPath, rootPath)) {
+        logger.warn(`路径遍历攻击尝试被拦截：${filePath}`);
+        return null;
+    }
+    
+    nowPath = fullPath;
     logger.info(nowPath)
     return nowPath;
 }
@@ -214,6 +233,11 @@ function getNowPath(filePath) {
 //获取文件列表
 app.get('/list/:filePath(*)', (req, res) => {
     let nowPath = getNowPath(req.params.filePath);
+    
+    if (nowPath === null) {
+        return res.status(403).json({msg: '非法路径访问'});
+    }
+    
     let {sta, end} = req.query;
     console.log(req.params.filePath,123456)
     if (fs.existsSync(nowPath)) {
@@ -255,9 +279,31 @@ app.get('/list/:filePath(*)', (req, res) => {
 })
 
 app.post('/delFile', (req, res) => {
-    fs.unlinkSync(`${rootPath}${req.body.filePath}`)
-    return res.json({msg: '删除成功'});
-})
+    try {
+        const filePath = req.body.filePath;
+        if (!filePath) {
+            return res.status(400).json({msg: '缺少文件路径'});
+        }
+        
+        const fullPath = path.join(rootPath, filePath);
+        
+        if (!validatePath(fullPath, rootPath)) {
+            logger.warn(`路径遍历攻击尝试被拦截：${filePath}`);
+            return res.status(403).json({msg: '非法路径访问'});
+        }
+        
+        if (!fs.existsSync(fullPath)) {
+            return res.status(404).json({msg: '文件不存在'});
+        }
+        
+        fs.unlinkSync(fullPath);
+        logger.info(`文件删除成功：${fullPath}`);
+        return res.json({msg: '删除成功'});
+    } catch (err) {
+        logger.error(`删除文件失败：${err.message}`);
+        return res.status(500).json({msg: '删除失败'});
+    }
+});
 
 
 app.post('/restartServer', (req, res) => {

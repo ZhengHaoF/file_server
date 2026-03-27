@@ -1,40 +1,94 @@
 import {spawn} from 'child_process'
+import fs from 'fs';
+import path from 'path';
 
-// 添加最大重试次数
-const MAX_RETRIES = 5;
-let retryCount = 0;
+const LOG_FILE = 'logs/restart.log';
+const MAX_RESTARTS = 10;
+let restartCount = 0;
+let currentSubprocess = null;
 
-function startSubprocess() {
+function log(msg) {
+    const timestamp = new Date().toISOString();
+    const logMsg = `[${timestamp}] ${msg}\n`;
+    console.log(msg);
+    
+    const logDir = path.dirname(LOG_FILE);
+    if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+    }
+    fs.appendFileSync(LOG_FILE, logMsg);
+}
+
+function startServer() {
+    log(`启动服务器 (重启次数: ${restartCount}/${MAX_RESTARTS})`);
+    
     const subprocess = spawn('node', ['index.js'], {
         stdio: 'inherit',
-        detached: false
+        detached: false,
+        env: { ...process.env }
     });
 
+    currentSubprocess = subprocess;
+
     subprocess.on('close', (code) => {
-        console.log(`子进程退出，退出码 ${code}`);
+        log(`服务器进程退出，退出码: ${code}`);
+        currentSubprocess = null;
         
-        // 添加重试次数检查
-        if (retryCount < MAX_RETRIES) {
-            retryCount++;
-            console.log(`正在重试... (${retryCount}/${MAX_RETRIES})`);
-            startSubprocess();
+        if (code === 0) {
+            log('服务器正常退出，等待重新启动...');
         } else {
-            console.error('达到最大重试次数，停止重试');
+            log('服务器异常退出，准备重启...');
+        }
+        
+        if (restartCount < MAX_RESTARTS) {
+            restartCount++;
+            setTimeout(() => {
+                startServer();
+            }, 1000);
+        } else {
+            log('达到最大重启次数限制，停止自动重启');
             process.exit(1);
         }
     });
 
     subprocess.on('error', (err) => {
-        console.error('启动子进程失败:', err);
-        process.exit(1);
+        log(`服务器进程错误: ${err.message}`);
+        currentSubprocess = null;
+        
+        if (restartCount < MAX_RESTARTS) {
+            restartCount++;
+            log('准备重新启动服务器...');
+            setTimeout(() => {
+                startServer();
+            }, 2000);
+        } else {
+            log('达到最大重启次数限制，停止自动重启');
+            process.exit(1);
+        }
     });
 
-    // 添加进程退出时的清理处理
     process.on('SIGINT', () => {
-        console.log('收到终止信号，关闭子进程...');
-        subprocess.kill();
-        process.exit();
+        log('收到终止信号，关闭服务器...');
+        if (currentSubprocess) {
+            currentSubprocess.kill('SIGTERM');
+        }
+        process.exit(0);
+    });
+
+    process.on('SIGTERM', () => {
+        log('收到终止信号，关闭服务器...');
+        if (currentSubprocess) {
+            currentSubprocess.kill('SIGTERM');
+        }
+        process.exit(0);
+    });
+
+    process.on('exit', (code) => {
+        log(`主进程退出，退出码: ${code}`);
     });
 }
 
-startSubprocess();
+log('='.repeat(50));
+log('服务器管理程序启动');
+log('='.repeat(50));
+startServer();

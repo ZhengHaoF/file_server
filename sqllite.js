@@ -49,7 +49,7 @@ export class Sql {
      * 删除过期的数据
      * @param day 过期时间，默认为30天
      */
-    cleanOldData(day = 30) {
+    async cleanOldData(day = 30) {
         let t = day * 86400000;
         let nowTime = new Date().getTime();
         let num = 0;
@@ -83,14 +83,11 @@ export class Sql {
                 }
             });
 
-            Promise.all(unlinkList).then((res)=>{
-                return unlinkList.length;
-            }).catch((err) => {
-                return 0;
-            });
+            await Promise.all(unlinkList);
             
-            return unlinkList.length;
+            return num;
         } catch(err) {
+            console.error(err);
             return 0;
         }
     }

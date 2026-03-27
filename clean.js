@@ -12,7 +12,7 @@ let sql = new Sql(config['imgCache']);
 console.log("开始清空过期数据")
 sql.cleanOldData().then((res)=>{
     console.log(`清理了${res}条数据`)
-}).then((err)=>{
-    console.log(err)
+}).catch((err)=>{
+    console.error(err)
 });
 

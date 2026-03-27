@@ -308,9 +308,14 @@ app.post('/delFile', (req, res) => {
 
 app.post('/restartServer', (req, res) => {
     if (String(req.body.pwd) === String(restartPwd)) {
-        res.json({msg: '开始重启'});
-        process.exit();
+        logger.info('收到重启服务器请求');
+        res.json({msg: '开始重启'}).end();
+        setTimeout(() => {
+            logger.info('服务器正在退出...');
+            process.exit(0);
+        }, 100);
     } else {
+        logger.warn('重启服务器请求 - 密码错误');
         return res.json({msg: '密码错误'});
     }
 })

@@ -13,6 +13,10 @@ import stripBom from 'strip-bom';
 import sharp from 'sharp';
 import log4js from 'log4js';
 import basicAuth from 'express-basic-auth';
+import ffmpeg from 'fluent-ffmpeg';
+import ffmpegStatic from 'ffmpeg-static';
+
+ffmpeg.setFfmpegPath(ffmpegStatic);
 
 
 
@@ -20,26 +24,26 @@ import basicAuth from 'express-basic-auth';
 // 我保留了 bodyParser 的 import 语句，但建议查看你的 express 版本并考虑是否可以使用内置的中间件。
 
 log4js.configure({
-        "appenders": {
-            "console": {"type": "console"},
-            "file": {
-                "type": "file",
-                "filename": "logs/app.log",
-                "maxLogSize": 10485760,
-                "backups": 3,
-                "compress": true
-            }
-        },
-        "categories": {
-            "default": {"appenders": ["console", "file"], "level": "info"}
+    "appenders": {
+        "console": { "type": "console" },
+        "file": {
+            "type": "file",
+            "filename": "logs/app.log",
+            "maxLogSize": 10485760,
+            "backups": 3,
+            "compress": true
         }
+    },
+    "categories": {
+        "default": { "appenders": ["console", "file"], "level": "info" }
     }
+}
 );
 const logger = log4js.getLogger();
 const app = express();
 const config = JSON.parse(stripBom(fs.readFileSync("config.json", 'utf8')));
 const rootPath = config['rootPath'];
-if(!fs.existsSync(rootPath)){
+if (!fs.existsSync(rootPath)) {
     logger.error(`文件夹不存在，停止运行：${rootPath}`);
     process.exit()
 }
@@ -61,7 +65,7 @@ const restartPwd = config['restartPwd'];
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
 // app.use(bodyParser());
-let credentials = {key: privateKey, cert: certificate};
+let credentials = { key: privateKey, cert: certificate };
 let PORT = 3000;
 let SSLPORT = 3001;
 // const mime = require("./mime.json");
@@ -96,10 +100,10 @@ const imageInterceptor = (req, res, next) => {
                 filePath = filePath.replace("/getFile", "");
                 filePath = decodeURIComponent(filePath);
                 const fullPath = path.join(rootPath, filePath);
-                
+
                 if (!validatePath(fullPath, rootPath)) {
                     logger.warn(`路径遍历攻击尝试被拦截：${filePath}`);
-                    return res.status(403).json({msg: '非法路径访问'});
+                    return res.status(403).json({ msg: '非法路径访问' });
                 }
                 filePath = fullPath;
                 let ext = path.extname(filePath);
@@ -123,9 +127,9 @@ const imageInterceptor = (req, res, next) => {
                         })
                     }).catch((err) => {
                         logger.error(`${filePath} -> 图片处理失败: ${err.message}`);
-                        res.status(500).json({msg: '图片处理失败'});
+                        res.status(500).json({ msg: '图片处理失败' });
                     })
-                    sql.insertInfo(hashDigest,ext);
+                    sql.insertInfo(hashDigest, ext);
                 } else {
                     logger.info(`${hashDigest}${ext} -> 已存在数据库中`)
                     sql.updateInfo(hashDigest);
@@ -145,7 +149,7 @@ const imageInterceptor = (req, res, next) => {
                                 })
                             }).catch((err) => {
                                 logger.error(`${filePath} -> 图片处理失败: ${err.message}`);
-                                res.status(500).json({msg: '图片处理失败'});
+                                res.status(500).json({ msg: '图片处理失败' });
                             });
                             return;
                         }
@@ -168,21 +172,19 @@ const imageInterceptor = (req, res, next) => {
 
 };
 
-function getCompressImg(filePath, w, h) {
-    logger.info(`${filePath} -> 图片开始处理，最大宽度${w}最大高度${h}`)
-    // 你可以选择直接发送响应，或者继续处理请求（调用 next()）
+function getCompressImg(filePath) {
     return new Promise((resolve, reject) => {
         let stime = new Date().getTime();
         sharp(filePath)
             .resize({
-                    width: Number(w),
-                    height: Number(h),
-                    fit: sharp.fit.inside,
-                    withoutEnlargement: true
-                },
+                width: Number(w),
+                height: Number(h),
+                fit: sharp.fit.inside,
+                withoutEnlargement: true
+            },
             )
             .jpeg({
-                progressive:true,
+                progressive: true,
             })
             .toBuffer()
             .then(data => {
@@ -191,10 +193,59 @@ function getCompressImg(filePath, w, h) {
                 let etime = new Date().getTime();
                 logger.info(filePath + " -> 处理耗时:" + (etime - stime))
             }).catch((err) => {
-            reject(err);
-        });
+                reject(err);
+            });
     })
 
+}
+
+function getVideoThumbnail(filePath, timestamp = '00:00:01') {
+    return new Promise((resolve, reject) => {
+        let stime = new Date().getTime();
+        const tempOutputPath = `${imgCache}/temp_thumb_${Date.now()}.jpg`;
+
+        ffmpeg(filePath)
+            .on('start', (commandLine) => {
+                logger.info('FFmpeg 命令: ' + commandLine);
+            })
+            .on('progress', (progress) => {
+                if (progress.percent) {
+                    logger.info('视频截图处理进度: ' + progress.percent.toFixed(2) + '%');
+                }
+            })
+            .on('stderr', (stderrLine) => {
+                logger.info('FFmpeg stderr: ' + stderrLine);
+            })
+            .on('end', () => {
+                fs.readFile(tempOutputPath, (err, data) => {
+                    if (err) {
+                        reject(err);
+                        return;
+                    }
+                    fs.unlink(tempOutputPath, (unlinkErr) => {
+                        if (unlinkErr) {
+                            logger.error('删除临时文件失败: ' + unlinkErr.message);
+                        }
+                    });
+                    let etime = new Date().getTime();
+                    logger.info(filePath + ' -> 视频截图生成耗时: ' + (etime - stime) + 'ms');
+                    resolve(data);
+                });
+            })
+            .on('error', (err, stdout, stderr) => {
+                logger.error('视频截图生成失败: ' + err.message);
+                logger.error('FFmpeg stdout: ' + stdout);
+                logger.error('FFmpeg stderr: ' + stderr);
+                reject(err);
+            })
+            .screenshots({
+                count: 1,
+                folder: imgCache,
+                filename: `temp_thumb_${Date.now()}.jpg`,
+                size: '320x240',
+                timemarks: [timestamp]
+            });
+    });
 }
 
 // 使用中间件拦截图片请求
@@ -211,35 +262,27 @@ function getNowPath(filePath) {
     }
     filePath = filePath.replace(/__/g, "/")
     const fullPath = path.join(rootPath, filePath);
-    
+
     if (!validatePath(fullPath, rootPath)) {
         logger.warn(`路径遍历攻击尝试被拦截：${filePath}`);
         return null;
     }
-    
+
     nowPath = fullPath;
     logger.info(nowPath)
     return nowPath;
 }
 
-
-// , basicAuth({
-//     users: {
-//         [username]:password
-//     },
-//     challenge: true,
-// })
-
 //获取文件列表
 app.get('/list/:filePath(*)', (req, res) => {
     let nowPath = getNowPath(req.params.filePath);
-    
+
     if (nowPath === null) {
-        return res.status(403).json({msg: '非法路径访问'});
+        return res.status(403).json({ msg: '非法路径访问' });
     }
-    
-    let {sta, end} = req.query;
-    console.log(req.params.filePath,123456)
+
+    let { sta, end } = req.query;
+    console.log(req.params.filePath, 123456)
     if (fs.existsSync(nowPath)) {
         //文件文件夹路径存在
         try {
@@ -282,26 +325,26 @@ app.post('/delFile', (req, res) => {
     try {
         const filePath = req.body.filePath;
         if (!filePath) {
-            return res.status(400).json({msg: '缺少文件路径'});
+            return res.status(400).json({ msg: '缺少文件路径' });
         }
-        
+
         const fullPath = path.join(rootPath, filePath);
-        
+
         if (!validatePath(fullPath, rootPath)) {
             logger.warn(`路径遍历攻击尝试被拦截：${filePath}`);
-            return res.status(403).json({msg: '非法路径访问'});
+            return res.status(403).json({ msg: '非法路径访问' });
         }
-        
+
         if (!fs.existsSync(fullPath)) {
-            return res.status(404).json({msg: '文件不存在'});
+            return res.status(404).json({ msg: '文件不存在' });
         }
-        
+
         fs.unlinkSync(fullPath);
         logger.info(`文件删除成功：${fullPath}`);
-        return res.json({msg: '删除成功'});
+        return res.json({ msg: '删除成功' });
     } catch (err) {
         logger.error(`删除文件失败：${err.message}`);
-        return res.status(500).json({msg: '删除失败'});
+        return res.status(500).json({ msg: '删除失败' });
     }
 });
 
@@ -309,24 +352,106 @@ app.post('/delFile', (req, res) => {
 app.post('/restartServer', (req, res) => {
     if (String(req.body.pwd) === String(restartPwd)) {
         logger.info('收到重启服务器请求');
-        res.json({msg: '开始重启'}).end();
+        res.json({ msg: '开始重启' }).end();
         setTimeout(() => {
             logger.info('服务器正在退出...');
             process.exit(0);
         }, 100);
     } else {
         logger.warn('重启服务器请求 - 密码错误');
-        return res.json({msg: '密码错误'});
+        return res.json({ msg: '密码错误' });
     }
 })
-
-
 
 app.get('/cleanOldData/:day', (req, res) => {
     let day = req.params.day;
     sql.cleanOldData(day);
     res.send("清理旧文件成功");
 })
+
+app.get('/getVideoPreview/:path(*)', (req, res) => {
+    logger.info(`收到视频预览请求：${req.params.path}`);
+
+    try {
+        let videoPath = req.params.path;
+        videoPath = decodeURIComponent(videoPath);
+        const fullPath = path.join(rootPath, videoPath);
+
+        if (!validatePath(fullPath, rootPath)) {
+            logger.warn(`路径遍历攻击尝试被拦截：${videoPath}`);
+            return res.status(403).json({ msg: '非法路径访问' });
+        }
+
+        if (!fs.existsSync(fullPath)) {
+            logger.error(`视频文件不存在：${fullPath}`);
+            return res.status(404).json({ msg: '视频文件不存在' });
+        }
+
+        const hash = crypto.createHash('sha256');
+        hash.update(fullPath + '!video_preview');
+        const hashDigest = hash.digest('hex');
+        logger.info(`视频路径哈希: ${hashDigest}`);
+
+        const cacheFileName = `${hashDigest}.jpg`;
+        const cacheFilePath = `${imgCache}/${cacheFileName}`;
+
+        const sqlRes = sql.selectInfo(hashDigest);
+
+        if (sqlRes) {
+            logger.info(`${cacheFileName} -> 已存在数据库中`);
+            sql.updateInfo(hashDigest);
+
+            fs.readFile(cacheFilePath, (err, data) => {
+                if (err) {
+                    logger.info(`${cacheFileName} -> 缓存文件不存在，需要重新生成`);
+                    getVideoThumbnail(fullPath).then((thumbData) => {
+                        res.setHeader('Content-Type', 'image/jpeg');
+                        res.setHeader('Content-Disposition', `attachment; filename=${cacheFileName}`);
+                        res.send(thumbData);
+
+                        fs.writeFile(cacheFilePath, thumbData, (writeErr) => {
+                            if (writeErr) {
+                                logger.error(`写入缓存文件失败: ${writeErr.message}`);
+                            } else {
+                                logger.info(`${cacheFileName} -> 已成功保存`);
+                            }
+                        });
+                    }).catch((err) => {
+                        logger.error(`${fullPath} -> 视频截图生成失败: ${err.message}`);
+                        res.status(500).json({ msg: '视频截图生成失败' });
+                    });
+                    return;
+                }
+                res.setHeader('Content-Type', 'image/jpeg');
+                res.setHeader('Content-Disposition', `attachment; filename=${cacheFileName}`);
+                res.send(data);
+            });
+        } else {
+            logger.info(`${cacheFileName} -> 数据库中不存在，开始生成视频截图`);
+            getVideoThumbnail(fullPath).then((thumbData) => {
+                res.setHeader('Content-Type', 'image/jpeg');
+                res.setHeader('Content-Disposition', 'attachment; filename=video_preview.jpg');
+                res.send(thumbData);
+
+                fs.writeFile(cacheFilePath, thumbData, (err) => {
+                    if (err) {
+                        logger.error(`写入缓存文件失败: ${err.message}`);
+                    } else {
+                        logger.info(`${cacheFileName} -> 已成功保存`);
+                    }
+                });
+
+                sql.insertInfo(hashDigest, '.jpg');
+            }).catch((err) => {
+                logger.error(`${fullPath} -> 视频截图生成失败: ${err.message}`);
+                res.status(500).json({ msg: '视频截图生成失败' });
+            });
+        }
+    } catch (e) {
+        logger.error(`视频预览处理错误: ${e}`);
+        res.status(500).json({ msg: '视频预览处理错误' });
+    }
+});
 
 let httpServer = http.createServer(app);
 let httpsServer = https.createServer(credentials, app);

@@ -131,7 +131,8 @@ async function build() {
     );
     
     console.log('安装依赖...');
-    await execCommand('npm install', { cwd: __dist });
+
+    await execCommand('cd dist && cd && npm install');
     
     console.log('打包完成！');
   } catch (error) {

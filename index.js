@@ -430,7 +430,7 @@ app.get('/getVideoPreview/:path(*)', (req, res) => {
             logger.info(`${cacheFileName} -> 数据库中不存在，开始生成视频截图`);
             getVideoThumbnail(fullPath).then((thumbData) => {
                 res.setHeader('Content-Type', 'image/jpeg');
-                res.setHeader('Content-Disposition', 'attachment; filename=video_preview.jpg');
+                res.setHeader('Content-Disposition', `attachment; filename=${cacheFileName}`);
                 res.send(thumbData);
 
                 fs.writeFile(cacheFilePath, thumbData, (err) => {

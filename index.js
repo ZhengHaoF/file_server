@@ -334,14 +334,21 @@ app.post('/delFile', (req, res) => {
         }
 
         if (!fs.existsSync(fullPath)) {
-            return res.status(404).json({ msg: '文件不存在' });
+            return res.status(404).json({ msg: '文件或文件夹不存在' });
         }
 
-        fs.unlinkSync(fullPath);
-        logger.info(`文件删除成功：${fullPath}`);
-        return res.json({ msg: '删除成功' });
+        const stats = fs.statSync(fullPath);
+        if (stats.isDirectory()) {
+            fs.rmSync(fullPath, { recursive: true, force: true });
+            logger.info(`文件夹删除成功：${fullPath}`);
+            return res.json({ msg: '删除成功' });
+        } else {
+            fs.unlinkSync(fullPath);
+            logger.info(`文件删除成功：${fullPath}`);
+            return res.json({ msg: '删除成功' });
+        }
     } catch (err) {
-        logger.error(`删除文件失败：${err.message}`);
+        logger.error(`删除失败：${err.message}`);
         return res.status(500).json({ msg: '删除失败' });
     }
 });

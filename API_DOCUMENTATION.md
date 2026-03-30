@@ -59,11 +59,11 @@
 
 ---
 
-### 2. 删除文件
+### 2. 删除文件或文件夹
 
 **端点**: `POST /delFile`
 
-**描述**: 删除指定文件
+**描述**: 删除指定文件或文件夹（支持递归删除文件夹）
 
 **请求头**:
 ```
@@ -77,9 +77,16 @@ Content-Type: application/json
 }
 ```
 
+或者删除文件夹：
+```json
+{
+  "filePath": "images/folder"
+}
+```
+
 | 字段 | 类型 | 必填 | 描述 |
 |------|------|------|------|
-| filePath | string | 是 | 要删除的文件路径（相对于根路径） |
+| filePath | string | 是 | 要删除的文件或文件夹路径（相对于根路径） |
 
 **响应示例**:
 ```json
@@ -88,10 +95,15 @@ Content-Type: application/json
 }
 ```
 
+**功能说明**:
+- 支持删除文件
+- 支持删除文件夹（包含文件夹内所有文件和子文件夹）
+- 使用递归删除，删除文件夹时会同时删除其内容
+
 **错误响应**:
 - 400: 缺少文件路径
 - 403: 非法路径访问（路径遍历攻击）
-- 404: 文件不存在
+- 404: 文件或文件夹不存在
 - 500: 删除失败
 
 ---
@@ -302,6 +314,13 @@ await fetch('http://localhost:3000/delFile', {
   body: JSON.stringify({ filePath: 'images/photo.jpg' })
 });
 
+// 删除文件夹（包含所有子文件和子文件夹）
+await fetch('http://localhost:3000/delFile', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ filePath: 'images/folder' })
+});
+
 // 获取视频缩略图
 const videoPreview = await fetch('http://localhost:3000/getVideoPreview/videos/movie.mp4');
 const blob = await videoPreview.blob();
@@ -322,6 +341,11 @@ curl http://localhost:3000/list/$
 curl -X POST http://localhost:3000/delFile \
   -H "Content-Type: application/json" \
   -d '{"filePath":"images/photo.jpg"}'
+
+# 删除文件夹（包含所有子文件和子文件夹）
+curl -X POST http://localhost:3000/delFile \
+  -H "Content-Type: application/json" \
+  -d '{"filePath":"images/folder"}'
 
 # 获取视频缩略图
 curl -o video_preview.jpg http://localhost:3000/getVideoPreview/videos/movie.mp4

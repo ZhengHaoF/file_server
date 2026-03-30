@@ -12,7 +12,6 @@ import cors from 'cors';
 import stripBom from 'strip-bom';
 import sharp from 'sharp';
 import log4js from 'log4js';
-import basicAuth from 'express-basic-auth';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 
@@ -172,7 +171,7 @@ const imageInterceptor = (req, res, next) => {
 
 };
 
-function getCompressImg(filePath) {
+function getCompressImg(filePath, w, h) {
     return new Promise((resolve, reject) => {
         let stime = new Date().getTime();
         sharp(filePath)
@@ -188,7 +187,6 @@ function getCompressImg(filePath) {
             })
             .toBuffer()
             .then(data => {
-                // 100 pixels wide, auto-scaled height
                 resolve(data);
                 let etime = new Date().getTime();
                 logger.info(filePath + " -> 处理耗时:" + (etime - stime))

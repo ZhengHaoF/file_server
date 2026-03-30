@@ -14,7 +14,6 @@ RUN npm config set -g registry https://registry.npmmirror.com/
 
 # 安装项目依赖
 RUN npm install
-RUN npm install -g rollup
 
 # 将当前目录下的所有文件复制到容器内的/usr/src/app目录下
 COPY clean.js ./
@@ -28,7 +27,6 @@ COPY mime.json ./
 COPY package-lock.json ./
 COPY package.json ./
 COPY README.md ./
-COPY rollup.config.mjs ./
 COPY sqllite.js ./
 COPY webdav-server.js ./
 COPY webdav-test.js ./
@@ -46,9 +44,14 @@ COPY web ./web/
 
 RUN node init.js
 
-RUN rollup -c
 RUN cp config.json dist
 RUN cp imgCache.db dist
+RUN cp index.js dist
+RUN cp clean.js dist
+RUN cp init.js dist
+RUN cp start.js dist
+RUN cp sqllite.js dist
+RUN cp -r utils dist
 RUN cp -r cert dist/cert
 RUN cp -r web dist/web
 RUN mkdir -p dist/imgCache

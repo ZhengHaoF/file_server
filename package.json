@@ -32,12 +32,6 @@
     "node": ">=18.17.0"
   },
   "devDependencies": {
-    "@rollup/plugin-commonjs": "^26.0.1",
-    "@rollup/plugin-json": "^6.1.0",
-    "@rollup/plugin-node-resolve": "^15.2.3",
-    "@rollup/plugin-terser": "^0.4.4",
-    "nodemon": "^3.1.9",
-    "rollup": "^4.20.0",
-    "rollup-plugin-ignore": "^1.0.10"
+    "nodemon": "^3.1.9"
   }
 }

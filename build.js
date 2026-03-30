@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const __dist = path.join(__dirname, 'dist');
 
 const isUpbuild = process.argv.includes('--upbuild');
 
@@ -68,7 +69,14 @@ async function build() {
     }
     
     await execCommand('node init.js');
-    await execCommand('npx rollup -c');
+    
+    console.log('复制源代码文件...');
+    copyFileSync('index.js', 'dist/index.js');
+    copyFileSync('clean.js', 'dist/clean.js');
+    copyFileSync('init.js', 'dist/init.js');
+    copyFileSync('start.js', 'dist/start.js');
+    copyFileSync('sqllite.js', 'dist/sqllite.js');
+    copyFileSync('utils/utils.js', 'dist/utils/utils.js');
     
     console.log('复制配置文件...');
     copyFileSync('config.json', 'dist/config.json');
@@ -100,9 +108,20 @@ async function build() {
       version: "1.0.0",
       description: "file serve dist package",
       main: "index.js",
+      type: "module",
       dependencies: {
+        "better-sqlite3": "^11.6.0",
+        "body-parser": "^1.20.2",
+        "cors": "^2.8.5",
+        "express": "^4.18.2",
+        "express-basic-auth": "^1.2.1",
+        "ffmpeg-static": "^5.3.0",
+        "fluent-ffmpeg": "^2.1.3",
+        "images": "^3.2.4",
+        "log4js": "^6.9.1",
+        "netmask": "^2.0.2",
         "sharp": "^0.33.3",
-        "better-sqlite3": "^11.6.0"
+        "strip-bom": "^5.0.0"
       }
     };
     
@@ -112,7 +131,7 @@ async function build() {
     );
     
     console.log('安装依赖...');
-    await execCommand('npm install', { cwd: path.join(__dirname, 'dist') });
+    await execCommand('npm install', { cwd: __dist });
     
     console.log('打包完成！');
   } catch (error) {
@@ -132,7 +151,13 @@ async function upbuild() {
       console.log('dist 目录不存在，将创建新目录');
     }
     
-    await execCommand('npx rollup -c');
+    console.log('复制源代码文件...');
+    copyFileSync('index.js', 'dist/index.js');
+    copyFileSync('clean.js', 'dist/clean.js');
+    copyFileSync('init.js', 'dist/init.js');
+    copyFileSync('start.js', 'dist/start.js');
+    copyFileSync('sqllite.js', 'dist/sqllite.js');
+    copyFileSync('utils/utils.js', 'dist/utils/utils.js');
     
     console.log('复制 web 目录...');
     if (fs.existsSync('web')) {

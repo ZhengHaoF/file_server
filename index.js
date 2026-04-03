@@ -280,7 +280,6 @@ app.get('/list/:filePath(*)', (req, res) => {
     }
 
     let { sta, end } = req.query;
-    console.log(req.params.filePath, 123456)
     if (fs.existsSync(nowPath)) {
         //文件文件夹路径存在
         try {

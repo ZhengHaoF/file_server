@@ -332,6 +332,11 @@ app.post('/delFile', (req, res) => {
             return res.status(403).json({ msg: '非法路径访问' });
         }
 
+        if (path.resolve(fullPath) === path.resolve(rootPath)) {
+            logger.warn(`尝试删除根目录被拦截：${filePath}`);
+            return res.status(403).json({ msg: '不能删除根目录' });
+        }
+
         if (!fs.existsSync(fullPath)) {
             return res.status(404).json({ msg: '文件或文件夹不存在' });
         }

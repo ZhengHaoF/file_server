@@ -197,11 +197,11 @@ GET /getVideoPreview/videos/movie.mp4
 
 ---
 
-### 6. 获取文件（支持图片处理）
+### 6. 获取文件（支持图片处理 + Range 请求）
 
 **端点**: `GET /getFile/*`
 
-**描述**: 获取服务器上的文件，支持图片实时缩放
+**描述**: 获取服务器上的文件，支持图片实时缩放和 Range 断点续传
 
 **URL 路径**: `/getFile/文件路径[!宽x高]`
 
@@ -211,6 +211,31 @@ GET /getVideoPreview/videos/movie.mp4
 | 宽高 | string | 否 | 图片缩放尺寸，格式 `宽x高`（如 `800x600`） |
 
 **支持的图片格式**: jpg, jpeg, png, gif, svg
+
+#### Range 请求支持
+
+该端点支持 HTTP Range 请求（RFC 7233），适用于视频播放拖动进度条和大文件断点续传。
+
+**请求头**（可选）:
+| Header | 格式 | 示例 |
+|--------|------|------|
+| Range | `bytes=start-end` | `Range: bytes=0-1023` |
+
+- `start` 和 `end` 为字节偏移量（从 0 开始）
+- `end` 可省略：`Range: bytes=1024-` 表示从 1024 到文件末尾
+
+**响应（Range 请求）**:
+- **状态码**: `206 Partial Content`
+- **Content-Range**: `bytes start-end/total`（如 `bytes 0-1023/5242880`）
+- **Accept-Ranges**: `bytes`
+- **Content-Length**: 请求的字节区间长度
+- **Content-Type**: 根据文件扩展名自动设置（基于 mime.json）
+
+**响应（无效 Range 请求）**:
+- **状态码**: `416 Range Not Satisfiable`
+- **Content-Range**: `bytes */total`
+
+#### 普通文件响应
 
 **响应**:
 - **Content-Type**: `application/octet-stream`
@@ -226,11 +251,8 @@ GET /getVideoPreview/videos/movie.mp4
 - 获取原图: `GET /getFile/images/photo.jpg`
 - 获取缩放图: `GET /getFile/images/photo.jpg!800x600`
 - URL 编码路径: `GET /getFile/images/photo%20name.jpg!1024x768`
-
-**响应示例**:
-```
-GET /getFile/photos/image.jpg!800x600
-```
+- Range 请求（前1024字节）: `Range: bytes=0-1023`
+- Range 请求（跳转到指定位置）: `Range: bytes=1048576-`
 
 ---
 
@@ -260,6 +282,7 @@ GET /getFile/photos/image.jpg!800x600
 | 400 | 请求参数错误 |
 | 403 | 禁止访问（路径遍历攻击拦截） |
 | 404 | 资源不存在 |
+| 416 | Range Not Satisfiable（请求的字节范围无效） |
 | 500 | 服务器内部错误 |
 
 ---
@@ -352,4 +375,10 @@ curl -o video_preview.jpg http://localhost:3000/getVideoPreview/videos/movie.mp4
 
 # 获取缩放图片
 curl -o resized.jpg "http://localhost:3000/getFile/images/photo.jpg!800x600"
+
+# Range 请求（获取前1024字节）
+curl -H "Range: bytes=0-1023" -o partial.dat http://localhost:3000/getFile/videos/movie.mp4
+
+# Range 请求（断点续传，从上次中断位置继续）
+curl -H "Range: bytes=1048576-" -o resume.dat http://localhost:3000/getFile/videos/movie.mp4
 ```

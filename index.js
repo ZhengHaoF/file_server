@@ -67,8 +67,12 @@ let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
 let credentials = { key: privateKey, cert: certificate };
 let PORT = 3000;
 let SSLPORT = 3001;
-// const mime = require("./mime.json");
-app.use(cors())
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const mimeTypes = require("./mime.json");
+app.use(cors({
+    exposedHeaders: ['Content-Range', 'Accept-Ranges']
+}))
 app.use(express.static('web'))
 app.use(express.json()); // 用于解析 JSON 格式的请求体
 app.use(express.urlencoded({ extended: true })); // 用于解析 URL-encoded 格式的请求体
@@ -248,8 +252,70 @@ function getVideoThumbnail(filePath, timestamp = '00:00:01') {
 
 // 使用中间件拦截图片请求
 app.use(imageInterceptor);
+
+// Range 请求支持中间件
+const rangeInterceptor = (req, res, next) => {
+    const range = req.headers.range;
+    if (!range) return next();
+
+    try {
+        let filePath = req.path.replace(/^\/getFile/, '');
+        filePath = decodeURIComponent(filePath);
+        const fullPath = path.join(rootPath, filePath);
+
+        if (!validatePath(fullPath, rootPath)) {
+            logger.warn(`Range请求路径遍历攻击拦截：${filePath}`);
+            return res.status(403).json({ msg: '非法路径访问' });
+        }
+
+        fs.stat(fullPath, (err, stat) => {
+            if (err || !stat.isFile()) return next();
+
+            const fileSize = stat.size;
+            const ext = path.extname(fullPath).toLowerCase();
+            const contentType = mimeTypes[ext] || 'application/octet-stream';
+            const parts = range.replace(/bytes=/, '').split('-');
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+            // 校验 Range 范围
+            if (isNaN(start) || isNaN(end) || start > end || start >= fileSize) {
+                logger.warn(`无效Range请求: ${range}, 文件大小: ${fileSize}`);
+                res.status(416).set('Content-Range', `bytes */${fileSize}`);
+                return res.end();
+            }
+
+            // end 不能超过文件大小
+            const actualEnd = Math.min(end, fileSize - 1);
+            const chunkSize = actualEnd - start + 1;
+
+            logger.info(`Range请求: ${filePath} [${start}-${actualEnd}/${fileSize}]`);
+
+            res.status(206);
+            res.set({
+                'Content-Range': `bytes ${start}-${actualEnd}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunkSize,
+                'Content-Type': contentType
+            });
+
+            const stream = fs.createReadStream(fullPath, { start, end: actualEnd });
+            stream.pipe(res);
+            stream.on('error', (streamErr) => {
+                logger.error(`Range流读取错误: ${streamErr.message}`);
+                if (!res.headersSent) {
+                    res.status(500).end();
+                }
+            });
+        });
+    } catch (e) {
+        logger.error(`Range处理异常: ${e.message}`);
+        next();
+    }
+};
+
 //托管静态文件
-app.use('/getFile', express.static(rootPath))
+app.use('/getFile', rangeInterceptor, express.static(rootPath))
 //获取当前文件夹
 function getNowPath(filePath) {
     let nowPath = "";

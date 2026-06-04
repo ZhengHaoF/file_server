@@ -17,6 +17,12 @@ import ffmpegStatic from 'ffmpeg-static';
 
 ffmpeg.setFfmpegPath(ffmpegStatic);
 
+// 引入管理后台模块
+import { adminRouter, setServerStatus } from './routes/admin.js';
+import { adminAuth } from './middleware/adminAuth.js';
+import { WebSocketServer } from 'ws';
+import { parseLogLine } from './utils/systemInfo.js';
+
 
 
 // 注意：由于你的项目中可能仍然需要处理旧版本的 express 或特定的用例，
@@ -564,13 +570,113 @@ app.get('/getVideoPreview/:path(*)', (req, res) => {
     }
 });
 
+// 管理后台静态文件
+app.use('/admin', express.static('admin'));
+
+// 管理后台 API
+app.use('/api/admin', adminAuth);
+app.use('/api/admin', adminRouter);
+
 let httpServer = http.createServer(app);
 let httpsServer = https.createServer(credentials, app);
+
+// WebSocket 日志流
+const wss = new WebSocketServer({ server: httpServer, path: '/api/admin/logs/stream' });
+
+wss.on('connection', (ws, req) => {
+    // 验证 token
+    const url = new URL(req.url, 'http://localhost');
+    const token = url.searchParams.get('token');
+
+    if (String(token) !== String(config.restartPwd)) {
+        ws.close(1008, '未授权');
+        return;
+    }
+
+    logger.info('WebSocket 日志流客户端已连接');
+
+    // 客户端筛选条件
+    let filter = { level: null };
+
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message.toString());
+            if (data.action === 'filter') {
+                filter.level = data.level || null;
+                logger.info(`日志流筛选条件已更新: ${JSON.stringify(filter)}`);
+            }
+        } catch (err) {
+            // 忽略无效消息
+        }
+    });
+
+    // 监听日志文件变化
+    let lastSize = 0;
+    try {
+        const stats = fs.statSync('logs/app.log');
+        lastSize = stats.size;
+    } catch (err) {
+        // 文件不存在
+    }
+
+    const watcher = fs.watch('logs/app.log', (eventType) => {
+        if (eventType === 'change') {
+            try {
+                const stats = fs.statSync('logs/app.log');
+                if (stats.size > lastSize) {
+                    // 读取新增内容
+                    const stream = fs.createReadStream('logs/app.log', {
+                        start: lastSize,
+                        encoding: 'utf8'
+                    });
+
+                    let buffer = '';
+                    stream.on('data', (chunk) => {
+                        buffer += chunk;
+                    });
+
+                    stream.on('end', () => {
+                        const lines = buffer.split('\n').filter(line => line.trim());
+                        lines.forEach(line => {
+                            const log = parseLogLine(line);
+                            if (!log) return;
+
+                            // 应用筛选
+                            if (filter.level && log.level.toLowerCase() !== filter.level.toLowerCase()) {
+                                return;
+                            }
+
+                            // 推送给客户端
+                            if (ws.readyState === ws.OPEN) {
+                                ws.send(JSON.stringify(log));
+                            }
+                        });
+                        lastSize = stats.size;
+                    });
+                }
+            } catch (err) {
+                // 忽略错误
+            }
+        }
+    });
+
+    ws.on('close', () => {
+        watcher.close();
+        logger.info('WebSocket 日志流客户端已断开');
+    });
+
+    ws.on('error', () => {
+        watcher.close();
+    });
+});
+
 httpServer.listen(PORT, function () {
     console.log('HTTP 服务运行在: http://localhost:%s', PORT);
+    setServerStatus({ http: 'running' });
 });
 httpsServer.listen(SSLPORT, function () {
     console.log('HTTPS 服务运行在: https://localhost:%s', SSLPORT);
+    setServerStatus({ https: 'running' });
 });
 
 console.log("使用Ctrl+C停止运行");

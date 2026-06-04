@@ -28,3 +28,5 @@ coverage
 *.sw?
 /imgCache/
 imgCache.db
+后端接口修改方案.md
+前端实施文档.md

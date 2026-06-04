@@ -77,6 +77,9 @@ async function build() {
     copyFileSync('start.js', 'dist/start.js');
     copyFileSync('sqllite.js', 'dist/sqllite.js');
     copyFileSync('utils/utils.js', 'dist/utils/utils.js');
+    copyFileSync('utils/systemInfo.js', 'dist/utils/systemInfo.js');
+    copyFileSync('middleware/adminAuth.js', 'dist/middleware/adminAuth.js');
+    copyFileSync('routes/admin.js', 'dist/routes/admin.js');
     
     console.log('复制配置文件...');
     copyFileSync('config.json', 'dist/config.json');
@@ -121,7 +124,8 @@ async function build() {
         "log4js": "^6.9.1",
         "netmask": "^2.0.2",
         "sharp": "^0.33.3",
-        "strip-bom": "^5.0.0"
+        "strip-bom": "^5.0.0",
+        "ws": "^8.16.0"
       }
     };
     

@@ -282,7 +282,7 @@ const rangeInterceptor = (req, res, next) => {
             if (isNaN(start) || isNaN(end) || start > end || start >= fileSize) {
                 logger.warn(`无效Range请求: ${range}, 文件大小: ${fileSize}`);
                 res.status(416).set('Content-Range', `bytes */${fileSize}`);
-                return res.end();
+                return res.json({ msg: '无效的Range请求范围' });
             }
 
             // end 不能超过文件大小
@@ -375,11 +375,11 @@ app.get('/list/:filePath(*)', (req, res) => {
             });
         } catch (e) {
             logger.error(`${nowPath}文件夹返回异常：${e}`);
-            res.status(404).send("文件夹读取错误");
+            return res.status(500).json({ msg: '文件夹读取错误' });
         }
     } else {
         //文件文件夹路径不存在
-        return res.status(404).send("文件夹不存在");
+        return res.status(404).json({ msg: '文件夹不存在' });
     }
 
 })
@@ -423,6 +423,42 @@ app.post('/delFile', (req, res) => {
     }
 });
 
+app.post('/renameFile', (req, res) => {
+    try {
+        const { oldPath, newPath } = req.body;
+        if (!oldPath || !newPath) {
+            return res.status(400).json({ msg: '缺少旧路径或新路径' });
+        }
+
+        const fullOldPath = path.join(rootPath, oldPath);
+        const fullNewPath = path.join(rootPath, newPath);
+
+        if (!validatePath(fullOldPath, rootPath) || !validatePath(fullNewPath, rootPath)) {
+            logger.warn(`路径遍历攻击尝试被拦截：${oldPath} -> ${newPath}`);
+            return res.status(403).json({ msg: '非法路径访问' });
+        }
+
+        if (path.resolve(fullOldPath) === path.resolve(rootPath)) {
+            logger.warn(`尝试重命名根目录被拦截`);
+            return res.status(403).json({ msg: '不能重命名根目录' });
+        }
+
+        if (!fs.existsSync(fullOldPath)) {
+            return res.status(404).json({ msg: '原文件或文件夹不存在' });
+        }
+
+        if (fs.existsSync(fullNewPath)) {
+            return res.status(409).json({ msg: '目标名称已存在' });
+        }
+
+        fs.renameSync(fullOldPath, fullNewPath);
+        logger.info(`重命名成功：${fullOldPath} -> ${fullNewPath}`);
+        return res.json({ msg: '重命名成功' });
+    } catch (err) {
+        logger.error(`重命名失败：${err.message}`);
+        return res.status(500).json({ msg: '重命名失败' });
+    }
+});
 
 app.post('/restartServer', (req, res) => {
     if (String(req.body.pwd) === String(restartPwd)) {
@@ -434,7 +470,7 @@ app.post('/restartServer', (req, res) => {
         }, 100);
     } else {
         logger.warn('重启服务器请求 - 密码错误');
-        return res.json({ msg: '密码错误' });
+        return res.status(401).json({ msg: '密码错误' });
     }
 })
 

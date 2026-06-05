@@ -118,6 +118,8 @@ async function upbuild() {
       console.log('dist 目录不存在，将创建新目录');
     }
 
+    fs.mkdirSync(__dist, { recursive: true });
+
     console.log('复制源代码文件...');
     const sourceFiles = [
       'index.js', 'clean.js', 'init.js', 'start.js', 'sqllite.js',

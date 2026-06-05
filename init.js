@@ -4,28 +4,16 @@
 
 import stripBom from "strip-bom";
 import fs from 'fs';
-import path from 'path';
 const config = JSON.parse(stripBom(fs.readFileSync("config.json", 'utf8')));
-try {
-    fs.rm("./imgCache", {recursive: true}, (e) => {
-        if (e) {
-            console.log("文件夹不存在")
-        } else {
-            console.log(`清空缓存成功`);
-        }
-        fs.mkdirSync('imgCache');
-    });
 
-    fs.rm("./logs", {recursive: true}, (e) => {
-        if (e) {
-            console.log("日志文件夹不存在")
-        } else {
-            console.log(`清空日志缓存成功`);
-        }
-        fs.mkdirSync('logs');
-    });
-} catch (err) {
-    console.error(`清空文件夹失败： ${err}`);
+for (const dir of ['imgCache', 'logs']) {
+    try {
+        fs.rmSync(dir, { recursive: true, force: true });
+        console.log(`清空 ${dir} 成功`);
+    } catch (err) {
+        console.log(`${dir} 文件夹不存在`);
+    }
+    fs.mkdirSync(dir, { recursive: true });
 }
 
 import { Sql } from "./sqllite.js"

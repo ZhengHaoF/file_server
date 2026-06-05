@@ -60,6 +60,7 @@ async function build() {
 
     console.log('复制配置文件...');
     fs.copyFileSync('config.json', path.join(__dist, 'config.json'));
+    fs.copyFileSync('mime.json', path.join(__dist, 'mime.json'));
     fs.copyFileSync('启动.bat', path.join(__dist, '启动.bat'));
     fs.copyFileSync('node.exe', path.join(__dist, 'node.exe'));
 

@@ -25,7 +25,7 @@ function log(msg) {
 let adminSubprocess = null;
 
 function startAdmin() {
-    const adminDistPath = path.join(__dirname, 'admin', 'dist');
+    const adminDistPath = path.join(__dirname, 'admin', 'index.html');
     const isProd = fs.existsSync(adminDistPath);
 
     if (isProd) {

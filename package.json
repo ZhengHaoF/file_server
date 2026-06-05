@@ -8,8 +8,8 @@
     "build": "node build.js",
     "upbuild": "node build.js --upbuild",
     "test": "node test-admin-api.js",
-    "init": "node.exe init.js",
-    "start": "nodemon index.js"
+    "init": "node init.js",
+    "start": "nodemon start.js"
   },
   "keywords": [],
   "author": "",

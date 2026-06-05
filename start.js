@@ -1,6 +1,9 @@
 import {spawn} from 'child_process'
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const LOG_FILE = 'logs/restart.log';
 const MAX_RESTARTS = 10;
@@ -17,6 +20,52 @@ function log(msg) {
         fs.mkdirSync(logDir, { recursive: true });
     }
     fs.appendFileSync(LOG_FILE, logMsg);
+}
+
+let adminSubprocess = null;
+
+function startAdmin() {
+    const adminDistPath = path.join(__dirname, 'admin', 'dist');
+    const isProd = fs.existsSync(adminDistPath);
+
+    if (isProd) {
+        // 生产模式：用 admin-server.js 托管 admin/dist 静态文件
+        log(`Admin 后台运行在: http://localhost:3008`);
+        const subprocess = spawn('node', ['admin-server.js'], {
+            stdio: 'inherit',
+            detached: false,
+            env: { ...process.env }
+        });
+        adminSubprocess = subprocess;
+        subprocess.on('close', (code) => {
+            log(`Admin 进程退出，退出码: ${code}`);
+            adminSubprocess = null;
+        });
+        subprocess.on('error', (err) => {
+            log(`Admin 进程错误: ${err.message}`);
+            adminSubprocess = null;
+        });
+    } else {
+        // 开发模式：启动 Vite dev server
+        log(`Admin 开发服务器启动 (端口: 3008)`);
+        const adminPath = path.join(__dirname, 'admin');
+        const subprocess = spawn('npm', ['run', 'dev'], {
+            cwd: adminPath,
+            stdio: 'inherit',
+            detached: false,
+            shell: true,
+            env: { ...process.env }
+        });
+        adminSubprocess = subprocess;
+        subprocess.on('close', (code) => {
+            log(`Admin 开发服务器退出，退出码: ${code}`);
+            adminSubprocess = null;
+        });
+        subprocess.on('error', (err) => {
+            log(`Admin 开发服务器错误: ${err.message}`);
+            adminSubprocess = null;
+        });
+    }
 }
 
 function startServer() {
@@ -72,6 +121,9 @@ function startServer() {
         if (currentSubprocess) {
             currentSubprocess.kill('SIGTERM');
         }
+        if (adminSubprocess) {
+            adminSubprocess.kill('SIGTERM');
+        }
         process.exit(0);
     });
 
@@ -79,6 +131,9 @@ function startServer() {
         log('收到终止信号，关闭服务器...');
         if (currentSubprocess) {
             currentSubprocess.kill('SIGTERM');
+        }
+        if (adminSubprocess) {
+            adminSubprocess.kill('SIGTERM');
         }
         process.exit(0);
     });
@@ -92,3 +147,4 @@ log('='.repeat(50));
 log('服务器管理程序启动');
 log('='.repeat(50));
 startServer();
+startAdmin();

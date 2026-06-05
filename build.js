@@ -43,7 +43,7 @@ async function build() {
 
     console.log('复制源代码文件...');
     const sourceFiles = [
-      'index.js', 'clean.js', 'init.js', 'start.js', 'sqllite.js',
+      'index.js', 'clean.js', 'init.js', 'start.js', 'sqllite.js', 'admin-server.js',
     ];
     for (const file of sourceFiles) {
       fs.copyFileSync(path.join(__dirname, file), path.join(__dist, file));
@@ -75,6 +75,18 @@ async function build() {
     console.log('复制 web 目录...');
     if (fs.existsSync('web')) {
       fs.cpSync('web', path.join(__dist, 'web'), { recursive: true });
+    }
+
+    console.log('构建 admin 管理面板...');
+    const adminPath = path.join(__dirname, 'admin');
+    await execCommand('npm run build', adminPath);
+    const adminDistSrc = path.join(adminPath, 'dist');
+    const adminDistDest = path.join(__dist, 'admin');
+    if (fs.existsSync(adminDistSrc)) {
+      fs.cpSync(adminDistSrc, adminDistDest, { recursive: true });
+      console.log('admin 构建产物已复制到 dist/admin');
+    } else {
+      console.error('警告: admin/dist 不存在，跳过');
     }
 
     console.log('创建 imgCache 目录...');
@@ -122,7 +134,7 @@ async function upbuild() {
 
     console.log('复制源代码文件...');
     const sourceFiles = [
-      'index.js', 'clean.js', 'init.js', 'start.js', 'sqllite.js',
+      'index.js', 'clean.js', 'init.js', 'start.js', 'sqllite.js', 'admin-server.js',
     ];
     for (const file of sourceFiles) {
       fs.copyFileSync(path.join(__dirname, file), path.join(__dist, file));
@@ -140,6 +152,18 @@ async function upbuild() {
     console.log('复制 web 目录...');
     if (fs.existsSync('web')) {
       fs.cpSync('web', path.join(__dist, 'web'), { recursive: true });
+    }
+
+    console.log('构建 admin 管理面板...');
+    const adminPath = path.join(__dirname, 'admin');
+    await execCommand('npm run build', adminPath);
+    const adminDistSrc = path.join(adminPath, 'dist');
+    const adminDistDest = path.join(__dist, 'admin');
+    if (fs.existsSync(adminDistSrc)) {
+      fs.cpSync(adminDistSrc, adminDistDest, { recursive: true });
+      console.log('admin 构建产物已复制到 dist/admin');
+    } else {
+      console.error('警告: admin/dist 不存在，跳过');
     }
 
     console.log('更新包打包完成！');

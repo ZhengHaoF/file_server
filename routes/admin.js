@@ -16,8 +16,8 @@ export const adminRouter = express.Router();
 
 // 存储 HTTP/HTTPS 服务器状态
 let serverStatus = {
-    http: 'running',
-    https: 'running'
+    http: 'stopped',
+    https: 'stopped'
 };
 
 /**

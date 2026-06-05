@@ -679,4 +679,21 @@ httpsServer.listen(SSLPORT, function () {
     setServerStatus({ https: 'running' });
 });
 
+httpServer.on('close', () => {
+    console.log('HTTP 服务已停止');
+    setServerStatus({ http: 'stopped' });
+});
+httpServer.on('error', (err) => {
+    console.error('HTTP 服务错误:', err.message);
+    setServerStatus({ http: 'stopped' });
+});
+httpsServer.on('close', () => {
+    console.log('HTTPS 服务已停止');
+    setServerStatus({ https: 'stopped' });
+});
+httpsServer.on('error', (err) => {
+    console.error('HTTPS 服务错误:', err.message);
+    setServerStatus({ https: 'stopped' });
+});
+
 console.log("使用Ctrl+C停止运行");

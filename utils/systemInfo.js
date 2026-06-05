@@ -134,7 +134,32 @@ export function getDiskInfo(targetPath) {
 }
 
 /**
- * 获取缓存目录统计信息
+ * 使用系统命令获取目录大小（性能最优）
+ * @param {string} dirPath 目录路径
+ * @returns {number} 目录大小（字节）
+ */
+function getDirectorySizeSync(dirPath) {
+    try {
+        if (process.platform === 'win32') {
+            // Windows: 使用 PowerShell 获取目录大小
+            const output = execSync(
+                `(Get-ChildItem -Path '${dirPath}' -Recurse -File | Measure-Object -Property Length -Sum).Sum`,
+                { encoding: 'utf8', timeout: 10000, shell: 'powershell.exe' }
+            );
+            return parseInt(output.trim()) || 0;
+        } else {
+            // Linux/Mac: 使用 du 命令
+            const output = execSync(`du -sb "${dirPath}"`, { encoding: 'utf8', timeout: 10000 });
+            return parseInt(output.split('\t')[0]) || 0;
+        }
+    } catch (err) {
+        console.error('获取目录大小失败:', err.message);
+        return 0;
+    }
+}
+
+/**
+ * 获取缓存目录统计信息（优化版：使用 withFileTypes 和系统命令）
  * @param {string} cachePath 缓存目录路径
  * @returns {Object} 缓存统计
  */
@@ -153,46 +178,21 @@ export function getCacheStats(cachePath) {
             return result;
         }
 
-        const files = fs.readdirSync(cachePath);
-        const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-        const videoExts = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv'];
+        // 使用 withFileTypes 直接判断是否是文件，无需额外 stat
+        const entries = fs.readdirSync(cachePath, { withFileTypes: true });
 
-        files.forEach(file => {
-            const filePath = path.join(cachePath, file);
-            try {
-                const stats = fs.statSync(filePath);
-
-                if (stats.isFile()) {
-                    result.totalFiles++;
-                    result.totalSize += stats.size;
-
-                    const ext = path.extname(file).toLowerCase();
-
-                    if (imageExts.includes(ext)) {
-                        result.imageCache.count++;
-                        result.imageCache.size += stats.size;
-                    } else if (videoExts.includes(ext)) {
-                        result.videoCache.count++;
-                        result.videoCache.size += stats.size;
-                    } else {
-                        // 其他文件归入图片缓存
-                        result.imageCache.count++;
-                        result.imageCache.size += stats.size;
-                    }
-
-                    // 更新时间范围
-                    const mtime = stats.mtime.toISOString();
-                    if (!result.oldestCache || mtime < result.oldestCache) {
-                        result.oldestCache = mtime;
-                    }
-                    if (!result.newestCache || mtime > result.newestCache) {
-                        result.newestCache = mtime;
-                    }
-                }
-            } catch (err) {
-                // 忽略无法访问的文件
+        entries.forEach(entry => {
+            if (entry.isFile()) {
+                result.totalFiles++;
+                result.imageCache.count++;
             }
         });
+
+        // 使用系统命令获取目录大小（比逐文件 stat 快很多）
+        result.totalSize = getDirectorySizeSync(cachePath);
+        result.imageCache.size = result.totalSize;
+        result.videoCache.size = 0;
+
     } catch (err) {
         console.error('获取缓存统计失败:', err.message);
     }

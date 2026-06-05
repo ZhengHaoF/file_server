@@ -11,12 +11,10 @@ export const useCacheStore = defineStore('cache', () => {
   const totalFiles = computed(() => stats.value?.totalFiles || 0)
   const totalSize = computed(() => stats.value?.totalSize || 0)
   const imageCache = computed(() => stats.value?.imageCache || { count: 0, size: 0 })
-  const videoCache = computed(() => stats.value?.videoCache || { count: 0, size: 0 })
   const dbSize = computed(() => stats.value?.dbSize || 0)
 
   const totalSizeFormatted = computed(() => formatBytes(totalSize.value))
   const imageSizeFormatted = computed(() => formatBytes(imageCache.value.size))
-  const videoSizeFormatted = computed(() => formatBytes(videoCache.value.size))
   const dbSizeFormatted = computed(() => formatBytes(dbSize.value))
 
   function formatBytes(bytes) {
@@ -62,11 +60,9 @@ export const useCacheStore = defineStore('cache', () => {
     totalFiles,
     totalSize,
     imageCache,
-    videoCache,
     dbSize,
     totalSizeFormatted,
     imageSizeFormatted,
-    videoSizeFormatted,
     dbSizeFormatted,
     formatBytes,
     fetchStats,

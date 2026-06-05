@@ -35,6 +35,8 @@ export const useStatusStore = defineStore('status', () => {
       status.value = await getStatus()
     } catch (e) {
       error.value = e.message || '获取状态失败'
+      // 请求失败时清空状态，确保显示为停止状态
+      status.value = null
     } finally {
       loading.value = false
     }

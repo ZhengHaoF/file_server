@@ -106,9 +106,9 @@
             <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">运行时长</span>
           </div>
           <div class="text-4xl font-bold mb-3">{{ statusStore.uptimeFormatted }}</div>
-          <div class="status-indicator success mt-4">
+          <div class="status-indicator mt-4" :class="serviceOverallStatus === 'running' ? 'success' : 'error'">
             <span class="status-dot"></span>
-            <span>服务正常运行</span>
+            <span>{{ serviceOverallStatus === 'running' ? '服务正常运行' : '服务已停止' }}</span>
           </div>
         </div>
       </div>
@@ -183,11 +183,19 @@
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, computed } from 'vue'
 import { useStatusStore } from '../stores/status.js'
 
 const statusStore = useStatusStore()
 const loading = statusStore.loading
+
+// 计算服务整体状态
+const serviceOverallStatus = computed(() => {
+  const http = statusStore.status?.server?.httpStatus
+  const https = statusStore.status?.server?.httpsStatus
+  if (http === 'running' || https === 'running') return 'running'
+  return 'stopped'
+})
 
 function formatMB(mb) {
   if (!mb) return '0 MB'

@@ -50,19 +50,23 @@
         <div class="card">
           <div class="p-4">
             <div class="flex items-center gap-3 mb-3">
-              <div class="status-indicator success">
+              <div class="status-indicator" :class="serviceOverallStatus === 'running' ? 'success' : 'error'">
                 <span class="status-dot"></span>
-                <span>运行中</span>
+                <span>{{ serviceOverallStatus === 'running' ? '运行中' : '已停止' }}</span>
               </div>
             </div>
             <div class="space-y-2 text-xs text-text-muted">
               <div class="flex justify-between">
                 <span>HTTP 服务</span>
-                <span class="text-success">正常</span>
+                <span :class="statusStore.status?.server?.httpStatus === 'running' ? 'text-success' : 'text-error'">
+                  {{ statusStore.status?.server?.httpStatus === 'running' ? '正常' : '停止' }}
+                </span>
               </div>
               <div class="flex justify-between">
                 <span>HTTPS 服务</span>
-                <span class="text-success">正常</span>
+                <span :class="statusStore.status?.server?.httpsStatus === 'running' ? 'text-success' : 'text-error'">
+                  {{ statusStore.status?.server?.httpsStatus === 'running' ? '正常' : '停止' }}
+                </span>
               </div>
             </div>
           </div>
@@ -86,14 +90,33 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useStatusStore } from '../stores/status.js'
 import IconDashboard from '../components/icons/IconDashboard.vue'
 import IconCache from '../components/icons/IconCache.vue'
 import IconLog from '../components/icons/IconLog.vue'
 import IconConfig from '../components/icons/IconConfig.vue'
 
 const route = useRoute()
+const statusStore = useStatusStore()
+
+// 计算服务整体状态
+const serviceOverallStatus = computed(() => {
+  const http = statusStore.status?.server?.httpStatus
+  const https = statusStore.status?.server?.httpsStatus
+  if (http === 'running' || https === 'running') return 'running'
+  return 'stopped'
+})
+
+// 定时刷新状态
+let statusTimer = null
+onMounted(() => {
+  statusStore.fetchStatus()
+  statusTimer = setInterval(() => {
+    statusStore.fetchStatus()
+  }, 30000) // 每30秒刷新一次
+})
 
 const navItems = [
   { 

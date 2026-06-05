@@ -50,25 +50,8 @@
             </div>
             <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">图片</span>
           </div>
-          <div class="text-4xl font-bold mb-2">{{ cacheStore.imageSizeFormatted }}</div>
-          <p class="text-sm text-text-muted">{{ cacheStore.imageCache.count }} 个文件</p>
-        </div>
-      </div>
-
-      <!-- Video Cache -->
-      <div class="card animate-fade-in-up delay-150">
-        <div class="p-6">
-          <div class="flex items-center justify-between mb-6">
-            <div class="w-12 h-12 rounded-2xl bg-warning-soft flex items-center justify-center">
-              <svg class="w-6 h-6 text-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-            <span class="text-xs font-semibold text-text-muted uppercase tracking-wider">视频</span>
-          </div>
-          <div class="text-4xl font-bold mb-2">{{ cacheStore.videoSizeFormatted }}</div>
-          <p class="text-sm text-text-muted">{{ cacheStore.videoCache.count }} 个文件</p>
+          <div class="text-4xl font-bold mb-2">{{ cacheStore.imageCache.count }}</div>
+          <p class="text-sm text-text-muted">个缓存文件</p>
         </div>
       </div>
 

@@ -43,7 +43,7 @@ async function build() {
 
     console.log('复制源代码文件...');
     const sourceFiles = [
-      'index.js', 'clean.js', 'init.js', 'start.js', 'sqllite.js', 'admin-server.js',
+      'index.js', 'clean.js', 'init.js', 'start.js', 'sqllite.js',
     ];
     for (const file of sourceFiles) {
       fs.copyFileSync(path.join(__dirname, file), path.join(__dist, file));
@@ -82,10 +82,10 @@ async function build() {
     const adminPath = path.join(__dirname, 'admin');
     await execCommand('npm run build', adminPath);
     const adminDistSrc = path.join(adminPath, 'dist');
-    const adminDistDest = path.join(__dist, 'admin');
+    const adminDistDest = path.join(__dist, 'admin', 'dist');
     if (fs.existsSync(adminDistSrc)) {
       fs.cpSync(adminDistSrc, adminDistDest, { recursive: true });
-      console.log('admin 构建产物已复制到 dist/admin');
+      console.log('admin 构建产物已复制到 dist/admin/dist');
     } else {
       console.error('警告: admin/dist 不存在，跳过');
     }
@@ -135,7 +135,7 @@ async function upbuild() {
 
     console.log('复制源代码文件...');
     const sourceFiles = [
-      'index.js', 'clean.js', 'init.js', 'start.js', 'sqllite.js', 'admin-server.js',
+      'index.js', 'clean.js', 'init.js', 'start.js', 'sqllite.js',
     ];
     for (const file of sourceFiles) {
       fs.copyFileSync(path.join(__dirname, file), path.join(__dist, file));
@@ -159,10 +159,10 @@ async function upbuild() {
     const adminPath = path.join(__dirname, 'admin');
     await execCommand('npm run build', adminPath);
     const adminDistSrc = path.join(adminPath, 'dist');
-    const adminDistDest = path.join(__dist, 'admin');
+    const adminDistDest = path.join(__dist, 'admin', 'dist');
     if (fs.existsSync(adminDistSrc)) {
       fs.cpSync(adminDistSrc, adminDistDest, { recursive: true });
-      console.log('admin 构建产物已复制到 dist/admin');
+      console.log('admin 构建产物已复制到 dist/admin/dist');
     } else {
       console.error('警告: admin/dist 不存在，跳过');
     }

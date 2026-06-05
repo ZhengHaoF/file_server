@@ -568,8 +568,10 @@ app.get('/getVideoPreview/:path(*)', (req, res) => {
     }
 });
 
-// 管理后台静态文件
-app.use('/admin', express.static('admin'));
+// 管理后台静态文件（如有构建好的 dist 则托管）
+if (fs.existsSync('admin/dist')) {
+    app.use('/admin', express.static('admin/dist'));
+}
 
 // 管理后台 API
 app.use('/api/admin', adminAuth);

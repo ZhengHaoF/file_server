@@ -66,10 +66,8 @@ if (!fs.existsSync(imgCache)) {
 }
 
 const restartPwd = config['restartPwd'];
-// const images = require('images');
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
-// app.use(bodyParser());
 let credentials = { key: privateKey, cert: certificate };
 let PORT = 3000;
 let SSLPORT = 3001;

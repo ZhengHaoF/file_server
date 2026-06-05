@@ -1,68 +1,46 @@
-# 使用官方的Node.js 18镜像作为基础镜像
-FROM node:18-alpine AS build
+# ========== 阶段 1：安装依赖 ==========
+FROM node:18-alpine AS deps
 
-# 设置工作目录为/usr/src/app
 WORKDIR /usr/src/app
 
-COPY ./package*.json ./
-
+# 配置镜像源加速
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+RUN apk add --update --no-cache \
+    python3 python3-dev py3-pip py3-setuptools \
+    build-base sharp
 
-RUN apk add --update --no-cache curl jq py3-configobj py3-pip py3-setuptools python3 python3-dev
+# 先复制 package.json 以利用 Docker 缓存层
+COPY package*.json ./
 
 RUN npm config set -g registry https://registry.npmmirror.com/
+RUN npm install --omit=dev
 
-# 安装项目依赖
-RUN npm install
+# ========== 阶段 2：运行镜像 ==========
+FROM node:18-alpine
 
-# 将当前目录下的所有文件复制到容器内的/usr/src/app目录下
-COPY clean.js ./
-COPY config.json ./
-COPY ftp-server.js ./
-COPY ftp-server2.js ./
-COPY imgCache.db ./
-COPY index.js ./
-COPY init.js ./
-COPY mime.json ./
-COPY package-lock.json ./
-COPY package.json ./
-COPY README.md ./
-COPY sqllite.js ./
-COPY webdav-server.js ./
-COPY webdav-test.js ./
-COPY start.js ./
+WORKDIR /usr/src/app
 
+# 安装运行时必要的原生模块依赖
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+RUN apk add --update --no-cache sharp
 
-# 复制目录及其内容到镜像的根目录下
-COPY cert ./cert/
-COPY dist ./dist/
-COPY img ./img/
-COPY imgCache ./imgCache/
-COPY logs ./logs/
+# 从 deps 阶段复制 node_modules
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+
+# 复制应用源码
+COPY index.js clean.js init.js start.js sqllite.js config.json ./
 COPY utils ./utils/
+COPY middleware ./middleware/
+COPY routes ./routes/
+COPY cert ./cert/
 COPY web ./web/
 
+# 初始化缓存目录
+RUN mkdir -p imgCache logs
+
+# 运行初始化脚本（清空旧缓存、建立数据库表）
 RUN node init.js
 
-RUN cp config.json dist
-RUN cp imgCache.db dist
-RUN cp index.js dist
-RUN cp clean.js dist
-RUN cp init.js dist
-RUN cp start.js dist
-RUN cp sqllite.js dist
-RUN cp -r utils dist
-RUN cp -r cert dist/cert
-RUN cp -r web dist/web
-RUN mkdir -p dist/imgCache
-RUN cd dist
-RUN npm init -y
-RUN npm install sharp better-sqlite3
+EXPOSE 3000 3001
 
-FROM node:18-alpine
-WORKDIR /usr/src/app
-COPY --from=build /usr/src/app .
-
-# 设置容器启动时执行的命令
 CMD ["sh", "-c", "node clean.js && node start.js"]
-

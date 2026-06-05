@@ -1,5 +1,6 @@
 import os from 'os';
 import fs from 'fs';
+import { statfsSync } from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import readline from 'readline';
@@ -73,60 +74,17 @@ export function getMemoryInfo() {
  */
 export function getDiskInfo(targetPath) {
     try {
-        // Windows 系统使用 wmic 获取磁盘信息
-        if (process.platform === 'win32') {
-            const drive = path.parse(targetPath).root.replace('\\', '');
-            const output = execSync(
-                `wmic logicaldisk where "DeviceID='${drive}'" get FreeSpace,Size /format:csv`,
-                { encoding: 'utf8', timeout: 5000 }
-            );
+        const stats = statfsSync(targetPath);
+        const total = stats.blocks * stats.bsize;
+        const free = stats.bavail * stats.bsize;
+        const used = (stats.blocks - stats.bfree) * stats.bsize;
 
-            const lines = output.trim().split('\n').filter(line => line.trim());
-            if (lines.length >= 2) {
-                const values = lines[lines.length - 1].split(',');
-                // CSV 格式: Node,FreeSpace,Size
-                if (values.length >= 3) {
-                    const free = parseInt(values[1]) || 0;
-                    const total = parseInt(values[2]) || 0;
-                    const used = total - free;
-
-                    return {
-                        total: Math.round(total / 1024 / 1024 / 1024),
-                        used: Math.round(used / 1024 / 1024 / 1024),
-                        free: Math.round(free / 1024 / 1024 / 1024),
-                        usage: total === 0 ? 0 : parseFloat((used / total * 100).toFixed(1))
-                    };
-                }
-            }
-
-            // 备用方案：使用 fs.statSync
-            const stats = fs.statSync(targetPath);
-            return {
-                total: 0,
-                used: 0,
-                free: 0,
-                usage: 0
-            };
-        } else {
-            // Linux/Mac 使用 statvfs 或 df
-            const output = execSync(`df -B1 "${targetPath}" | tail -1`, { encoding: 'utf8' });
-            const parts = output.trim().split(/\s+/);
-
-            if (parts.length >= 4) {
-                const total = parseInt(parts[1]) || 0;
-                const used = parseInt(parts[2]) || 0;
-                const free = parseInt(parts[3]) || 0;
-
-                return {
-                    total: Math.round(total / 1024 / 1024 / 1024),
-                    used: Math.round(used / 1024 / 1024 / 1024),
-                    free: Math.round(free / 1024 / 1024 / 1024),
-                    usage: total === 0 ? 0 : parseFloat((used / total * 100).toFixed(1))
-                };
-            }
-
-            return { total: 0, used: 0, free: 0, usage: 0 };
-        }
+        return {
+            total: Math.round(total / 1024 / 1024 / 1024),
+            used: Math.round(used / 1024 / 1024 / 1024),
+            free: Math.round(free / 1024 / 1024 / 1024),
+            usage: total === 0 ? 0 : parseFloat((used / total * 100).toFixed(1))
+        };
     } catch (err) {
         console.error('获取磁盘信息失败:', err.message);
         return { total: 0, used: 0, free: 0, usage: 0 };

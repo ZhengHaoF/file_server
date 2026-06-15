@@ -1,0 +1,29 @@
+{
+  "name": "file-server-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@icon-park/vue-next": "^1.4.2",
+    "@vueuse/core": "^10.11.0",
+    "axios": "^1.6.0",
+    "sass": "^1.64.0",
+    "vant": "^4.9.22",
+    "vue": "^3.3.4",
+    "vue-pick-colors": "^1.6.5",
+    "vue-router": "^4.2.4",
+    "vue-virtual-scroller": "^2.0.0-beta.8"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.5",
+    "vite": "^6.2.2",
+    "vitest": "^1.6.0",
+    "vue-lazyload": "^3.0.0"
+  }
+}

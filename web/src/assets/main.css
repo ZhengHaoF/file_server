@@ -1,0 +1,92 @@
+* {
+    margin: 0;
+    padding: 0;
+}
+body{
+    overflow: hidden;
+}
+.ok-btn {
+    flex: 1;
+    margin-left: 20px;
+    margin-right: 20px;
+    text-align: center;
+    box-sizing: border-box;
+    border: 1px solid #56dc57;
+    border-radius: 5px;
+    color: #56dc57;
+    background-color: #e8f6e9;
+    font-weight: bolder;
+    line-height: 30px;
+    height: 30px;
+    font-size: 14px;
+}
+
+.close-btn {
+    flex: 1;
+    margin-left: 20px;
+    margin-right: 20px;
+    text-align: center;
+    box-sizing: border-box;
+    border: 1px solid #a4a4a4;
+    border-radius: 5px;
+    color: #a4a4a4;
+    font-weight: bolder;
+    line-height: 30px;
+    height: 30px;
+    font-size: 14px;
+}
+
+.red-btn {
+    flex: 1;
+    margin-left: 20px;
+    margin-right: 20px;
+    text-align: center;
+    box-sizing: border-box;
+    border: 1px solid #F6823B;
+    border-radius: 5px;
+    color: #F6823B;
+    font-weight: bolder;
+    line-height: 30px;
+    height: 30px;
+    font-size: 14px;
+}
+
+/* 旋转动画 指定class为trun即可使用*/
+.turn {
+    animation: turn 5s linear infinite;
+}
+
+/*
+turn : 定义的动画名称
+10s : 动画时间
+linear : 动画平滑
+infinite :使动画无限循环
+transform:rotate(旋转角度)
+%0:动画开始
+%100:动画结束
+*/
+@keyframes turn {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    20% {
+        transform: rotate(72deg);
+    }
+
+    40% {
+        transform: rotate(144deg);
+    }
+
+    60% {
+        transform: rotate(216deg);
+    }
+
+    80% {
+        transform: rotate(288deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}

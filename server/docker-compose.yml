@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  file-serve:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: file-serve
+    ports:
+      - "3000:3000"  # 默认端口，根据config.json可能需要调整
+    volumes:
+      # 配置文件挂载
+      - ./config.json:/usr/src/app/config.json:ro
+      # 共享目录挂载（files目录对应config.json中的rootPath）
+      - ./files:/usr/src/app/files:rw
+      # 缓存目录挂载
+      - ./imgCache:/usr/src/app/imgCache:rw
+      # 日志目录挂载
+      - ./logs:/usr/src/app/logs:rw
+      # 数据库文件挂载
+      - ./imgCache.db:/usr/src/app/imgCache.db:rw
+    environment:
+      - NODE_ENV=production
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    networks:
+      - file-serve-network
+
+networks:
+  file-serve-network:
+    driver: bridge
+
+volumes:
+  file-serve-data:
+    driver: local

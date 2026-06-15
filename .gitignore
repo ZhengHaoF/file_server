@@ -1,3 +1,7 @@
+# ==============================
+# 通用忽略规则
+# ==============================
+
 # Logs
 logs
 *.log
@@ -7,17 +11,46 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
-.DS_Store
+
+# Build outputs
 dist
 dist-ssr
 coverage
 *.local
 
-/cypress/videos/
-/cypress/screenshots/
+# OS
+.DS_Store
+Thumbs.db
 
-# Editor directories and files
+# ==============================
+# 后端 (server/) 特有
+# ==============================
+
+# 运行时生成的缓存和数据库
+server/imgCache/
+server/imgCache.db
+server/logs/
+
+# node 可执行文件（通过 build.js 打包时包含）
+server/node.exe
+server/node.zip
+
+# ==============================
+# Flutter (mobile/) 特有
+# ==============================
+
+# mobile/ 下有独立的 .gitignore，这里补充根级忽略
+mobile/.dart_tool/
+mobile/.flutter-plugins-dependencies
+mobile/build/
+mobile/.metadata
+
+# ==============================
+# 编辑器 / IDE
+# ==============================
+
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -26,7 +59,10 @@ coverage
 *.njsproj
 *.sln
 *.sw?
-/imgCache/
-imgCache.db
+
+# ==============================
+# 项目文档（可选忽略）
+# ==============================
+
 后端接口修改方案.md
 前端实施文档.md

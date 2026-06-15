@@ -10,7 +10,7 @@ import {
     cleanCache,
     getMaskedConfig
 } from '../utils/systemInfo.js';
-import { Sql } from '../sqllite.js';
+import { getSqlInstance } from '../sqllite.js';
 
 export const adminRouter = express.Router();
 
@@ -105,12 +105,11 @@ adminRouter.post('/cache/clean', async (req, res) => {
         // 清理文件系统缓存
         const result = await cleanCache(cachePath, all ? null : days);
 
-        // 清理数据库记录
+        // 清理数据库记录（使用单例，不创建新连接）
+        const sql = getSqlInstance();
         if (all) {
-            const sql = new Sql(cachePath);
-            sql.init();
+            sql.reset();
         } else if (days) {
-            const sql = new Sql(cachePath);
             await sql.cleanOldData(days);
         }
 
@@ -186,22 +185,8 @@ adminRouter.post('/restart', (req, res) => {
  */
 adminRouter.get('/database/status', async (req, res) => {
     try {
-        const config = req.adminConfig;
-        const cachePath = config.imgCache || './imgCache';
-        const sql = new Sql(cachePath);
-
-        // 获取记录数量
-        let recordCount = 0;
-        try {
-            const Database = (await import('better-sqlite3')).default;
-            const db = new Database('./imgCache.db');
-            const result = db.prepare('SELECT COUNT(*) as count FROM image').get();
-            recordCount = result ? result.count : 0;
-            db.close();
-        } catch (err) {
-            console.error('查询记录数量失败:', err.message);
-        }
-
+        const sql = getSqlInstance();
+        const recordCount = sql.getCount();
         const dbInfo = getDatabaseInfo('./imgCache.db');
 
         res.json({

@@ -80,8 +80,8 @@ app.use(cors({
 app.use(express.static('web'))
 app.use(express.json()); // 用于解析 JSON 格式的请求体
 app.use(express.urlencoded({ extended: true })); // 用于解析 URL-encoded 格式的请求体
-import { Sql } from "./sqllite.js"
-const sql = new Sql(imgCache);
+import { getSqlInstance } from "./sqllite.js"
+const sql = getSqlInstance(imgCache);
 // 路径安全验证函数
 const validatePath = (targetPath, basePath) => {
     const normalizedPath = path.normalize(targetPath);

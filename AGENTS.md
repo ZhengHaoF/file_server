@@ -16,6 +16,7 @@
 | **管理面板** | `admin/` | Vue 3 + Vite | 后台管理界面 |
 | **移动端** | `mobile/` | Flutter/Dart | 跨端文件浏览 App（Android/iOS/Web/Desktop） |
 | **共享资源** | `shared/` | - | API 文档等多端共享资源 |
+| **Android 客户端** | `android-app/` | Kotlin + Jetpack Compose | 原生安卓文件浏览 App |
 
 ### 后端核心特性
 
@@ -73,6 +74,14 @@ file-serve/
 │   ├── ios/                         # iOS 平台
 │   ├── web/                         # Flutter Web 入口
 │   └── pubspec.yaml                 # Flutter 依赖
+│
+├── android-app/                     # Kotlin 原生安卓客户端
+│   ├── app/                         # 应用模块
+│   │   ├── src/                     # 源码
+│   │   └── build.gradle.kts         # 模块构建脚本
+│   ├── build.gradle.kts             # 根构建脚本
+│   ├── gradle/                      # Gradle Wrapper
+│   └── settings.gradle.kts          # 项目设置
 │
 ├── shared/                          # 共享资源
 │   ├── API_DOCUMENTATION.md         # API 接口文档

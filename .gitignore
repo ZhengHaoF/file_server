@@ -66,3 +66,20 @@ flutter-app/.metadata
 
 后端接口修改方案.md
 前端实施文档.md
+
+# ==============================
+# Android (android-app/) 特有
+# ==============================
+
+# Build artifacts
+android-app/build/
+android-app/app/build/
+
+# Gradle cache
+android-app/.gradle/
+
+# Local configuration
+android-app/local.properties
+
+# Release output
+android-app/app/release/

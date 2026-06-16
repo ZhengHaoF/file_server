@@ -38,14 +38,14 @@ server/node.exe
 server/node.zip
 
 # ==============================
-# Flutter (mobile/) 特有
+# Flutter (flutter-app/) 特有
 # ==============================
 
-# mobile/ 下有独立的 .gitignore，这里补充根级忽略
-mobile/.dart_tool/
-mobile/.flutter-plugins-dependencies
-mobile/build/
-mobile/.metadata
+# flutter-app/ 下有独立的 .gitignore，这里补充根级忽略
+flutter-app/.dart_tool/
+flutter-app/.flutter-plugins-dependencies
+flutter-app/build/
+flutter-app/.metadata
 
 # ==============================
 # 编辑器 / IDE

@@ -21,6 +21,10 @@ const routes = [
   {
     path: '/AudioPlay',
     component: AudioPlay
+  },
+  {
+    path: '/text-view',
+    component: () => import('@/view/TextViewer.vue')
   }
 ]
 

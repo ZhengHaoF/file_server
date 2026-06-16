@@ -8,6 +8,7 @@ const ZIP_TYPES = [".RAR", ".ZIP", ".7Z"];
 const AUDIO_TYPES = [".WAV", ".MP3", ".OGG"];
 const DOC_TYPES = [".DOC", ".DOCX"];
 const EXCEL_TYPES = [".XLS", ".XLSX"];
+const TEXT_TYPES = [".TXT", ".LOG", ".MD", ".JSON", ".XML", ".CSV", ".YAML", ".SQL", ".JS", ".TS", ".DART", ".PY"];
 
 /**
  * 判断是否为视频文件
@@ -77,6 +78,16 @@ export function isDoc(fileSuffix) {
 export function isExcel(fileSuffix) {
   if (!fileSuffix) return false;
   return EXCEL_TYPES.includes(fileSuffix.toUpperCase());
+}
+
+/**
+ * 判断是否为文本文件
+ * @param {string} fileSuffix - 文件后缀名
+ * @returns {boolean} 是否为文本文件
+ */
+export function isText(fileSuffix) {
+  if (!fileSuffix) return false;
+  return TEXT_TYPES.includes(fileSuffix.toUpperCase());
 }
 
 /**

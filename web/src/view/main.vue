@@ -44,7 +44,7 @@
       @del-file="delFile" @copy-url="copyUrl" @long-press="handleLongPress"></InfoTable>
     <ImageTable :key="imageTableKey" v-if="model === 'img'" ref="imageTableRef" :columns="columns" :img-size="imgSize"
       :onlyShowImages="onlyShowImages" :table-data="getTableDate" :table-head="tableHeader" :theme-color="themeColor"
-      :server-base-url="local" :video-thumbnail="videoThumbnail"
+      :server-base-url="serverBaseUrl" :video-thumbnail="videoThumbnail"
       @clickFile="clickFile" @del-file="delFile" @copy-url="copyUrl" @long-press="handleLongPress"></ImageTable>
     </div>
     <van-action-sheet
@@ -97,6 +97,11 @@
         </div>
         <div class="settings-content">
           <van-cell-group>
+            <van-cell title="服务器地址">
+              <template #value>
+                <input class="server-url-input" v-model="serverBaseUrl" placeholder="服务器地址" />
+              </template>
+            </van-cell>
             <van-cell title="预览图像素">
               <template #value>
                 <van-stepper v-model="imgSize" min="50" max="5000" />
@@ -171,7 +176,13 @@
           </van-cell-group>
 
           <div class="settings-footer">
-            <van-button type="primary" block @click="setOk">保存设置</van-button>
+            <van-button 
+              block 
+              @click="setOk"
+              :color="themeColor"
+              round
+              size="large"
+            >保存设置</van-button>
           </div>
         </div>
       </div>
@@ -190,6 +201,20 @@
         <div style="word-break: break-all; font-size: 14px; color: #666;">
           {{ currentFileUrl }}
         </div>
+      </div>
+    </van-dialog>
+    <!-- 重命名弹窗 -->
+    <van-dialog
+      v-model:show="showRenameDialog"
+      title="重命名"
+      show-cancel-button
+      confirm-button-text="确定"
+      cancel-button-text="取消"
+      @confirm="doRename"
+      @cancel="closeRenameDialog"
+    >
+      <div style="padding: 20px;">
+        <van-field v-model="renameValue" placeholder="请输入新文件名" input-align="left" />
       </div>
     </van-dialog>
     <Transition>
@@ -223,7 +248,7 @@ import loadingImg from "../assets/loading.png"
 import {getScroll, jsonSort, setScroll} from "@/tools/tools";
 import {getRatio} from "../../utils/utils";
 import HtmlVideoPlay from "@/view/HtmlVideoPlay.vue";
-import {isAudio, isImg, isVideo} from "../../utils/fileTypeUtils";
+import {isAudio, isImg, isText, isVideo} from "../../utils/fileTypeUtils";
 
 const InfoTableRef = ref(null);
 const imageTableRef = ref(null);
@@ -253,6 +278,7 @@ const mediaActions = [
   { name: '预览', value: 'preview' },
   { name: '复制链接', value: 'copy' },
   { name: '下载', value: 'download' },
+  { name: '重命名', value: 'rename' },
   { name: '删除', value: 'delete' }
 ];
 const showMediaActions = ref(false);
@@ -265,6 +291,11 @@ const onMediaSelect = (action) => {
       downloadFile();
     } else if (action.value === 'preview') {
       handleFilePreview();
+    } else if (action.value === 'rename') {
+      const fileInfo = getTableDate.value[nowFileIndex.value];
+      renamingFile.value = fileInfo;
+      renameValue.value = fileInfo.name;
+      showRenameDialog.value = true;
     } else if (action.value === 'delete') {
       delDialog.value = true;
     }
@@ -274,6 +305,7 @@ const onMediaSelect = (action) => {
 const fileActions = [
   { name: '复制链接', value: 'copy' },
   { name: '下载', value: 'download' },
+  { name: '重命名', value: 'rename' },
   { name: '删除', value: 'delete' }
 ];
 const showFileActions = ref(false);
@@ -284,6 +316,11 @@ const onFileSelect = (action) => {
       showUrlDialog.value = true;
     } else if (action.value === 'download') {
       downloadFile();
+    } else if (action.value === 'rename') {
+      const fileInfo = getTableDate.value[nowFileIndex.value];
+      renamingFile.value = fileInfo;
+      renameValue.value = fileInfo.name;
+      showRenameDialog.value = true;
     } else if (action.value === 'delete') {
       delDialog.value = true;
     }
@@ -292,6 +329,7 @@ const onFileSelect = (action) => {
 
 const folderActions = [
   { name: '复制链接', value: 'copy' },
+  { name: '重命名', value: 'rename' },
   { name: '删除', value: 'delete' }
 ];
 const showFolderActions = ref(false);
@@ -300,6 +338,11 @@ const onFolderSelect = (action) => {
   setTimeout(() => {
     if (action.value === 'copy') {
       showUrlDialog.value = true;
+    } else if (action.value === 'rename') {
+      const fileInfo = getTableDate.value[nowFileIndex.value];
+      renamingFile.value = fileInfo;
+      renameValue.value = fileInfo.name;
+      showRenameDialog.value = true;
     } else if (action.value === 'delete') {
       delDialog.value = true;
     }
@@ -358,12 +401,13 @@ const {
   goToRoot,
   goToBreadcrumb
 } = useFilePath()
-let local;
-if(import.meta.env.MODE === "development"){
-  local = "http://localhost:3000"//测试用
-}else{
-  local = `${window.location.protocol}//${window.location.hostname}:${window.location.port}`
-}
+const getDefaultServerUrl = () => {
+  if(import.meta.env.MODE === "development"){
+    return "http://localhost:3000";
+  }
+  return `${window.location.protocol}//${window.location.hostname}:${window.location.port}`;
+};
+const serverBaseUrl = ref(localStorage.getItem('serverBaseUrl') || getDefaultServerUrl());
 const tableData = ref([]);
 const getTableDate = computed(()=>{
   let newTableDate = [];
@@ -448,15 +492,20 @@ const tableHeader = ref([
 const showLoading = ref(false);
 const showUrlDialog = ref(false);
 const currentFileUrl = ref('');
+// 重命名相关状态
+const showRenameDialog = ref(false);
+const renameValue = ref('');
+const renamingFile = ref(null);
 
 const returnPath = () => {
-  if(showDialog.value || delDialog.value || setStringShow.value || showVideoPlay.value || showFileActions.value || showMediaActions.value){
+  if(showDialog.value || delDialog.value || setStringShow.value || showVideoPlay.value || showFileActions.value || showMediaActions.value || showRenameDialog.value){
     showDialog.value = false;
     delDialog.value = false;
     setStringShow.value = false;
     showVideoPlay.value = false;
     showFileActions.value = false;
     showMediaActions.value = false;
+    showRenameDialog.value = false;
     window.history.pushState(null, null, window.location.href);
   }else if(!isRoot.value){
     goBack();
@@ -522,7 +571,7 @@ const showImg = () => {
 
 const getFileUrl = (filePath, fileName) => {
   const cleanPath = filePath ? `/${filePath}` : '';
-  return `${local}/getFile${cleanPath}/${window.encodeURIComponent(fileName)}`;
+  return `${serverBaseUrl.value}/getFile${cleanPath}/${window.encodeURIComponent(fileName)}`;
 }
 
 const getFilePath = (filePath, fileName) => {
@@ -561,7 +610,7 @@ const delBtn = () => {
   delDialog.value = false;
   nextTick(() => {
     let fileInfo = getTableDate.value[nowFileIndex.value];
-    axios.post(`${local}/delFile`, {
+    axios.post(`${serverBaseUrl.value}/delFile`, {
       filePath: getFilePath(currentPath.value, fileInfo.name)
     }).then((res, err) => {
       if (res.status === 200) {
@@ -569,6 +618,41 @@ const delBtn = () => {
       }
     })
   })
+}
+
+// 重命名相关
+const closeRenameDialog = () => {
+  showRenameDialog.value = false;
+  renameValue.value = '';
+  renamingFile.value = null;
+}
+
+const doRename = async () => {
+  if (!renameValue.value.trim()) {
+    showToast('文件名不能为空');
+    return;
+  }
+  if (!renamingFile.value) return;
+
+  const oldName = renamingFile.value.name;
+  const newName = renameValue.value.trim();
+
+  if (oldName === newName) {
+    closeRenameDialog();
+    return;
+  }
+
+  const oldPath = getFilePath(currentPath.value, oldName);
+  const newPath = getFilePath(currentPath.value, newName);
+
+  try {
+    await axios.post(`${serverBaseUrl.value}/renameFile`, { oldPath, newPath });
+    showToast('重命名成功');
+    closeRenameDialog();
+    getFileList();
+  } catch (err) {
+    showToast('重命名失败: ' + (err.response?.data?.msg || err.message));
+  }
 }
 
 
@@ -609,6 +693,14 @@ const clickFile = (index) => {
       //音频
       router.push({
         path: "/AudioPlay",
+        query: {
+          url: getFileUrl(currentPath.value, fileInfo.name),
+        }
+      })
+    } else if (isText(fileSuffix)) {
+      //文本文件，跳转到文本查看器
+      router.push({
+        path: "/text-view",
         query: {
           url: getFileUrl(currentPath.value, fileInfo.name),
         }
@@ -672,7 +764,7 @@ const copyCurrentUrl = () => {
 const getFileList = () => {
   return new Promise(resolve => {
     showLoading.value = true;
-    axios.get(`${local}/list/${window.encodeURIComponent(currentPath.value)}`).then((res, err) => {
+    axios.get(`${serverBaseUrl.value}/list/${window.encodeURIComponent(currentPath.value)}`).then((res, err) => {
       showLoading.value = false;
       if (res.status === 200) {
         let data = res?.data?.list;
@@ -708,11 +800,12 @@ const backChange = (event) => {
     event.preventDefault();
   }
 
-  if(showDialog.value || delDialog.value || setStringShow.value || showVideoPlay.value){
+  if(showDialog.value || delDialog.value || setStringShow.value || showVideoPlay.value || showRenameDialog.value){
     showDialog.value = false;
     delDialog.value = false;
     setStringShow.value = false;
     showVideoPlay.value = false;
+    showRenameDialog.value = false;
     window.history.pushState(null, null, window.location.href);
     return false;
   }else{
@@ -762,6 +855,7 @@ const setOk = () => {
   localStorage.setItem("fileSore", String(fileSore.value))
   localStorage.setItem("folderSort", String(folderSort.value))
   localStorage.setItem("themeColor", String(themeColor.value))
+  localStorage.setItem("serverBaseUrl", String(serverBaseUrl.value))
   infoTableKey.value++;
   imageTableKey.value++;
 }
@@ -774,7 +868,7 @@ const clearCache = () => {
 
 const restartTheServerPwd = ref("");
 const restartTheServer = () => {
-  axios.post(`${local}/restartServer`, {
+  axios.post(`${serverBaseUrl.value}/restartServer`, {
     pwd: restartTheServerPwd.value
   }).then((res) => {
     if (res.data.msg === "开始重启") {
@@ -810,11 +904,12 @@ onMounted(async () => {
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
       if (window.visualViewport.width < window.innerWidth) {
-        if (showDialog.value || delDialog.value || setStringShow.value || showVideoPlay.value) {
+        if (showDialog.value || delDialog.value || setStringShow.value || showVideoPlay.value || showRenameDialog.value) {
           showDialog.value = false;
           delDialog.value = false;
           setStringShow.value = false;
           showVideoPlay.value = false;
+          showRenameDialog.value = false;
           window.history.pushState(null, null, window.location.href);
         }
       }
@@ -1045,6 +1140,15 @@ onUnmounted(() => {
 
 .PxInput {
   width: 80px;
+}
+
+.server-url-input {
+  width: 100%;
+  padding: 4px 8px;
+  border: 1px solid #dcdee0;
+  border-radius: 4px;
+  font-size: 12px;
+  box-sizing: border-box;
 }
 
 .select-input {

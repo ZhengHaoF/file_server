@@ -34,7 +34,14 @@
 而大多数国产手机浏览器都有视屏小窗之类的功能，对视屏的兼容性是网页所不能及的，所以建议使用网页播放器，方便浏览器调用自带的播放器，这样体验最好。
 
 
-### 前端地址
-https://github.com/ZhengHaoF/file_server_web
+### 项目结构
+```
+file-serve/
+├── server/          # 后端服务（Node.js + Express）
+├── web/             # Web 前端（Vue 3 + Vite）
+├── flutter-app/     # Flutter 跨平台应用（Android/iOS/Windows/macOS/Linux/Web）
+├── admin/           # 管理面板（Vue 3 + Vite）
+└── shared/          # 共享资源（API 文档等）
+```
 
 ## 注意：不能把根目录设置为共享目录

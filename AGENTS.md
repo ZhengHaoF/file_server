@@ -14,9 +14,8 @@
 | **后端服务** | `server/` | Node.js + Express | 文件服务器核心，提供 API 和静态文件托管 |
 | **Web 前端** | `web/` | Vue 3 + Vite | 用户端文件浏览器 |
 | **管理面板** | `admin/` | Vue 3 + Vite | 后台管理界面 |
-| **移动端** | `mobile/` | Flutter/Dart | 跨端文件浏览 App（Android/iOS/Web/Desktop） |
+| **移动端** | `flutter-app/` | Flutter/Dart | 跨端文件浏览 App（Android/iOS/Web/Desktop） |
 | **共享资源** | `shared/` | - | API 文档等多端共享资源 |
-| **Android 客户端** | `android-app/` | Kotlin + Jetpack Compose | 原生安卓文件浏览 App |
 
 ### 后端核心特性
 
@@ -68,20 +67,12 @@ file-serve/
 │   ├── package.json                 # 管理面板依赖
 │   └── vite.config.js               # Vite 配置
 │
-├── mobile/                          # Flutter 客户端（原 file_server_flutter）
+├── flutter-app/                     # Flutter 客户端（原 mobile/ file_server_flutter）
 │   ├── lib/                         # Dart 源码
 │   ├── android/                     # Android 平台
 │   ├── ios/                         # iOS 平台
 │   ├── web/                         # Flutter Web 入口
 │   └── pubspec.yaml                 # Flutter 依赖
-│
-├── android-app/                     # Kotlin 原生安卓客户端
-│   ├── app/                         # 应用模块
-│   │   ├── src/                     # 源码
-│   │   └── build.gradle.kts         # 模块构建脚本
-│   ├── build.gradle.kts             # 根构建脚本
-│   ├── gradle/                      # Gradle Wrapper
-│   └── settings.gradle.kts          # 项目设置
 │
 ├── shared/                          # 共享资源
 │   ├── API_DOCUMENTATION.md         # API 接口文档
@@ -269,7 +260,7 @@ npm run upbuild   # 仅打包更新文件
 docker compose up -d
 ```
 
-### Flutter 命令（在 `mobile/` 目录执行）
+### Flutter 命令（在 `flutter-app/` 目录执行）
 
 ```powershell
 # 安装依赖

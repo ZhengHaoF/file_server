@@ -571,6 +571,11 @@ app.get('/getVideoPreview/:path(*)', (req, res) => {
 // 管理后台静态文件（如有构建好的 dist 则托管）
 if (fs.existsSync('admin/dist')) {
     app.use('/admin', express.static('admin/dist'));
+    // SPA history 模式回退：深链与刷新都交给前端路由处理
+    app.get('/admin/*', (req, res, next) => {
+        if (path.extname(req.path)) return next();
+        res.sendFile(path.resolve('admin/dist/index.html'));
+    });
 }
 
 // 管理后台 API

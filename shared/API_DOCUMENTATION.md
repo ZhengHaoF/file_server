@@ -317,8 +317,10 @@ GET /getVideoPreview/videos/movie.mp4
 
 | 字段 | 类型 | 必填 | 描述 |
 |------|------|------|------|
+| destPath | string | 是 | 目标目录（相对 rootPath 的路径），空字符串表示根目录。**必须排在 `file` 字段之前**，否则返回 400 |
 | file | binary | 是 | 文件内容，字段名固定为 `file`，一次一个文件 |
-| destPath | string | 否 | 目标目录（相对 rootPath 的路径），空字符串表示根目录 |
+
+> ⚠️ **字段顺序是硬约束**：服务端在处理文件流之前就要确定落盘目录，而 multipart 只能按顺序解析，因此 `destPath` 必须先于 `file` 发送。
 
 **响应示例**:
 ```json
@@ -331,6 +333,8 @@ GET /getVideoPreview/videos/movie.mp4
 
 **功能说明**:
 - 每次请求仅支持一个文件；客户端多文件场景应排队逐个发送
+- 文件**直接写入目标目录**（先用 `.fsupload-<uuid>` 临时名），传输完成后同盘改名为最终文件名；不做跨盘复制，改名是元数据操作，不会阻塞服务
+- 若服务异常退出，目标目录可能残留 `.fsupload-` 前缀的临时文件，可安全删除
 - 文件名取自 `file` 字段的文件名；会过滤非法字符并做编码修复（保留中文名）
 - 同名文件直接拒绝（不自动改名、不覆盖）
 - 禁止上传内联可执行的扩展名：`.html .htm .xhtml .shtml .js .mhtml .svg`
@@ -338,7 +342,7 @@ GET /getVideoPreview/videos/movie.mp4
 
 **使用示例**:
 ```bash
-# 上传到根目录
+# 上传到根目录（-F 的先后顺序即字段顺序，destPath 必须写在 file 之前）
 curl -F "destPath=" -F "file=@./photo.jpg" http://localhost:3000/upload
 
 # 上传到子目录
@@ -346,7 +350,7 @@ curl -F "destPath=images" -F "file=@./photo.jpg" http://localhost:3000/upload
 ```
 
 **错误响应**:
-- 400: 缺少文件 / 目标不是文件夹 / 该类型文件不允许上传
+- 400: 缺少文件 / 缺少 `destPath` 字段（或字段顺序不对） / 目标不是文件夹 / 该类型文件不允许上传
 - 403: 上传功能未启用（`uploadEnabled` 不为 true） / 非法路径访问
 - 404: 目标目录不存在
 - 409: 目标文件已存在

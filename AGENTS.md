@@ -130,7 +130,7 @@ file-serve/
 | GET  | `/list/:filePath(*)` | 无 | 列出目录（`$` 代替 `/`，`$$` 为根），支持 `sta/end` 分页 |
 | POST | `/delFile` | **无** | 删除文件或递归删除文件夹 |
 | POST | `/renameFile` | **无** | 重命名/移动；校验 `validatePath`，禁止操作根目录，目标已存在返回 409 |
-| POST | `/upload` | **无（需 `uploadEnabled` 开关）** | multipart 单文件上传；校验 `validatePath`，409 同名 / 413 超限 / 扩展名黑名单 |
+| POST | `/upload` | **无（需 `uploadEnabled` 开关）** | multipart 单文件上传；直写目标目录（`.fsupload-<uuid>` 临时名）后同盘改名，校验 `validatePath`，409 同名 / 413 超限 / 扩展名黑名单；**`destPath` 必须排在 `file` 字段之前** |
 | POST | `/restartServer` | `restartPwd` | 密码校验后 `process.exit(0)`，由 `start.js` 拉起 |
 | GET  | `/cleanOldData/:day` | **无** | 调用 `sql.cleanOldData(day)` 清理过期缓存 |
 | GET  | `/getVideoPreview/:path(*)` | 无 | 生成/读取视频缩略图（缓存到 `imgCache`） |
@@ -350,7 +350,7 @@ flutter build web
 1. **新增路由**：
    - 必须放在 `app.use('/getFile', rangeInterceptor, express.static(rootPath))` 之后，**避免被静态中间件吞掉**（除非你确实想优先静态）。
    - 涉及路径的，复制 `validatePath` 校验。
-   - 上传类路由参照 `/upload` 的三段式：开关守卫（每次读 config，热生效）→ `multer` 磁盘暂存 `imgCache/.upload_tmp` → 校验落盘（409/413/黑名单），最后用**四参错误中间件**兜底 multer 的 `LIMIT_FILE_SIZE` 与自定义错误。
+   - 上传类路由参照 `/upload` 的三段式：开关守卫（每次读 config，热生效）→ `multer` 直写目标目录（随机临时名，`destination` 回调里读 `destPath`）→ 同盘改名落定（409/413/黑名单），最后用**四参错误中间件**兜底 multer 的 `LIMIT_FILE_SIZE` 与自定义错误。
    - 涉及缓存的，沿用 `crypto.createHash('sha256')` 命名规则并在 `sqllite.js` 添加对应方法。
    - 新增管理接口挂到 `server/routes/admin.js`（会自动继承 `/api/admin` 前的 `adminAuth`），不要绕过它自己 `app.get`。
    - 改了 `admin/` 源码后要重新构建 **并重启后端**，否则 `/admin` 挂载判断不会刷新。
@@ -384,7 +384,9 @@ flutter build web
 - 后端已改「普通项目式」部署（无打包流程）：`server/build.js` 与 `dist/` 已删除，前端产物装配统一走根级 `assemble.js`。目标机部署 = git 拉取 + `npm install` + `node start.js`；**web/admin 有改动时需 `npm run assemble` 并重启后端**，`admin` 面板只在进程启动时检查并挂载一次。
 - `server/index.js` 中 `W` / `H` 解析后未做 `Number.isFinite` 校验，传 `abc` 会让 sharp 抛错。
 - `/delFile`、`/renameFile`、`/cleanOldData/:day` 没有任何鉴权，仅靠路径校验；`/upload` 只靠 `uploadEnabled` 开关，同样无鉴权（默认关闭但配置即暴露）；在公网部署需加认证中间件。
-- `POST /upload` 的暂存目录是 `imgCache/.upload_tmp`（与缓存同卷，跨卷用 copy+unlink 兜底）；`node init.js` 会连缓存一起清掉，请勿在其中放置任何非临时内容。
+- `POST /upload` **不设独立暂存目录**：文件由 `multer` 直接写进目标目录（临时名 `.fsupload-<uuid>`），传输完成后同盘改名为最终文件名 —— 同盘改名是元数据操作，既不产生跨盘复制（旧实现 IO 量是数据的 3 倍），也不会用同步 API 阻塞事件循环。
+- 由于落盘位置在文件流开始前就要确定，`destination` 回调只能看到排在 `file` **之前**已解析的字段，因此 `destPath` 必须是 `file` 之前的字段，缺失时返回 400 而不是静默写错位置。
+- 副作用：上传要求**目标目录可写**（旧实现只需暂存目录可写）；服务异常退出时目标目录可能残留 `.fsupload-` 前缀临时文件，可安全删除。历史遗留的 `server/imgCache/.upload_tmp` 目录已不再使用，可以删掉。
 - 管理后台鉴权与 `restartPwd` 强耦合，且无 session/过期/失败限速（见 §3.6）。若要加固，需单独设计登录换 token 协议（改动涉及前后端）。
 - `shared/API_DOCUMENTATION.md` 只覆盖用户端接口，`/api/admin/*` 与 WebSocket 完全没有文档；同时该文档在 `web/`、`flutter-app/` 下还有内容分叉的副本，缺乏单一可信来源。
 - `admin/admin-server.js` 无 script 引用，且与 `base: '/admin/'` 的路径约定冲突，实际不可用。

@@ -16,7 +16,10 @@ final GoRouter appRouter = GoRouter(
       routes: [
         GoRoute(
           path: '/downloads',
-          builder: (context, state) => const DownloadManagerPage(),
+          builder: (context, state) {
+            final tab = int.tryParse(state.uri.queryParameters['tab'] ?? '');
+            return DownloadManagerPage(initialTab: (tab ?? 0).clamp(0, 1));
+          },
         ),
         GoRoute(
           path: '/settings',

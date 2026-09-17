@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +15,7 @@ import '../models/file_info.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/storage_service.dart';
+import '../services/upload_service.dart';
 import '../utils/date_utils.dart';
 import '../utils/file_type_utils.dart';
 import '../widgets/file_icon.dart';
@@ -36,6 +40,7 @@ class _HomePageState extends State<HomePage> {
   String _currentPath = '';
   String _viewMode = 'list';
   bool _hasDialogOpen = false;
+  bool _uploadQueued = false;
   DateTime? _lastBackPress;
 
   @override
@@ -43,7 +48,22 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _currentPath = widget.path ?? '';
     _viewMode = _storage.model;
+    UploadService().addListener(_onUploadUpdate);
     _loadFileList();
+  }
+
+  @override
+  void dispose() {
+    UploadService().removeListener(_onUploadUpdate);
+    super.dispose();
+  }
+
+  void _onUploadUpdate() {
+    if (!_uploadQueued) return;
+    if (!UploadService().hasActiveTasks) {
+      _uploadQueued = false;
+      _loadFileList();
+    }
   }
 
   @override
@@ -307,6 +327,14 @@ class _HomePageState extends State<HomePage> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.upload),
+              title: const Text('上传到此目录'),
+              onTap: () {
+                Navigator.pop(context);
+                _showUploadSheet();
+              },
+            ),
+            ListTile(
               leading: const Text('取消'),
               onTap: () => Navigator.pop(context),
             ),
@@ -359,6 +387,14 @@ class _HomePageState extends State<HomePage> {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.upload),
+              title: const Text('上传到此目录'),
+              onTap: () {
+                Navigator.pop(context);
+                _showUploadSheet();
+              },
+            ),
+            ListTile(
               leading: const Text('取消'),
               onTap: () => Navigator.pop(context),
             ),
@@ -400,6 +436,14 @@ class _HomePageState extends State<HomePage> {
               onTap: () {
                 Navigator.pop(context);
                 _confirmDelete(fileInfo);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.upload),
+              title: const Text('上传到此目录'),
+              onTap: () {
+                Navigator.pop(context);
+                _showUploadSheet();
               },
             ),
             ListTile(
@@ -482,6 +526,102 @@ class _HomePageState extends State<HomePage> {
         );
       }
     }
+  }
+
+  void _showUploadSheet() {
+    setState(() => _hasDialogOpen = true);
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.folder_open),
+              title: const Text('选择文件'),
+              subtitle: const Text('上传到当前目录'),
+              onTap: () {
+                Navigator.pop(context);
+                _pickAndUpload();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('拍照上传'),
+              subtitle: const Text('拍照后直接上传到当前目录'),
+              onTap: () {
+                Navigator.pop(context);
+                _takePhotoAndUpload();
+              },
+            ),
+            ListTile(
+              leading: const Text('取消'),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
+    ).then((_) {
+      if (mounted) setState(() => _hasDialogOpen = false);
+    });
+  }
+
+  Future<void> _pickAndUpload() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any,
+        allowMultiple: true,
+        withData: false,
+      );
+      if (result == null || result.files.isEmpty) return;
+      _enqueueUploads(result.files);
+    } catch (e) {
+      if (mounted) _showSnack('选择文件失败');
+    }
+  }
+
+  Future<void> _takePhotoAndUpload() async {
+    try {
+      final picker = ImagePicker();
+      final file = await picker.pickImage(source: ImageSource.camera);
+      if (file == null) return;
+
+      final size = await File(file.path).length();
+      _enqueueUploads([
+        PlatformFile(
+          name: file.name.isNotEmpty
+              ? file.name
+              : 'photo_${DateTime.now().millisecondsSinceEpoch}.jpg',
+          path: file.path,
+          size: size,
+        ),
+      ]);
+    } catch (e) {
+      if (mounted) _showSnack('拍照失败');
+    }
+  }
+
+  void _enqueueUploads(List<PlatformFile> files) {
+    final items = <({String fileName, String localPath, int fileSize})>[];
+    for (final f in files) {
+      if (f.path == null) continue;
+      items.add((fileName: f.name, localPath: f.path!, fileSize: f.size));
+    }
+    if (items.isEmpty) {
+      if (mounted) _showSnack('所选文件无法上传');
+      return;
+    }
+
+    _uploadQueued = true;
+    UploadService().startUploads(items, _currentPath);
+    if (mounted) {
+      _showSnack('已加入上传队列（${items.length} 个文件）');
+      context.push('/downloads?tab=1');
+    }
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   void _confirmDelete(FileInfo fileInfo) {
@@ -658,6 +798,12 @@ class _HomePageState extends State<HomePage> {
         ),
         centerTitle: true,
         actions: [
+          if (!kIsWeb)
+            IconButton(
+              icon: const Icon(Icons.upload),
+              tooltip: '上传到当前目录',
+              onPressed: _showUploadSheet,
+            ),
           if (!kIsWeb)
             IconButton(
               icon: const Icon(Icons.download),

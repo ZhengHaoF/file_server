@@ -5,6 +5,7 @@ import 'package:media_kit/media_kit.dart';
 import 'router/app_router.dart';
 import 'services/download_service.dart';
 import 'services/storage_service.dart';
+import 'services/upload_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,6 +13,7 @@ void main() async {
   await StorageService().init();
   if (!kIsWeb) {
     await DownloadService().init();
+    await UploadService().init();
   }
   runApp(const MyApp());
 }

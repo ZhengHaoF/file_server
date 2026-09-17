@@ -5,7 +5,6 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "node test-admin-api.js",
     "init": "node init.js",
     "start": "nodemon start.js"
   },

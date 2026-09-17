@@ -9,6 +9,7 @@
     "build:web": "cd web && npm run build",
     "build:admin": "cd admin && npm run build",
     "assemble": "node assemble.js",
+    "pack": "node pack.js",
     "build:all": "npm run assemble"
   }
 }

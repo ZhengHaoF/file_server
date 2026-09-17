@@ -20,6 +20,9 @@ dist-ssr
 coverage
 *.local
 
+# 打包产物（npm run pack 生成，用于上传 Releases）
+file-serve-v*.zip
+
 # OS
 .DS_Store
 Thumbs.db

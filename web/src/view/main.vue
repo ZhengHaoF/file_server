@@ -12,6 +12,13 @@
       </template>
       <template #right>
         <div class="nav-right">
+          <upload-icon
+            @click="openUploadPicker('')"
+            theme="outline"
+            size="28"
+            :fill="themeColor"
+            :strokeWidth="3"
+          />
           <list-bottom
             v-if="model==='list'"
             @click="changeMode"
@@ -231,14 +238,21 @@
         </div>
       </div>
     </Transition>
+    <input
+      ref="uploadInputRef"
+      class="upload-input"
+      type="file"
+      multiple
+      @change="onUploadFilesChange"
+    />
   </div>
 </template>
 <script setup>
-import {AllApplication, ListBottom, SettingTwo} from "@icon-park/vue-next";
+import {AllApplication, ListBottom, SettingTwo, Upload as UploadIcon} from "@icon-park/vue-next";
 import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue";
 import axios from "axios";
 import {onBeforeRouteUpdate, useRoute, useRouter} from "vue-router";
-import {showImagePreview, showToast} from 'vant';
+import {showImagePreview, showLoadingToast, showToast} from 'vant';
 import ImageTable from "@/components/ImageTable.vue";
 import InfoTable from "@/components/InfoTable.vue";
 import PickColors from 'vue-pick-colors'
@@ -329,12 +343,21 @@ const onFileSelect = (action) => {
 
 const folderActions = [
   { name: '复制链接', value: 'copy' },
+  { name: '上传到此文件夹', value: 'upload' },
   { name: '重命名', value: 'rename' },
   { name: '删除', value: 'delete' }
 ];
 const showFolderActions = ref(false);
 const onFolderSelect = (action) => {
   showFolderActions.value = false;
+  // 上传须留在用户手势的调用栈内，放进 setTimeout 会被浏览器拦截文件选择器
+  if (action.value === 'upload') {
+    const fileInfo = getTableDate.value[nowFileIndex.value];
+    if (fileInfo) {
+      openUploadPicker(fileInfo.name);
+    }
+    return;
+  }
   setTimeout(() => {
     if (action.value === 'copy') {
       showUrlDialog.value = true;
@@ -655,6 +678,97 @@ const doRename = async () => {
   }
 }
 
+// ===== 上传 =====
+const uploadInputRef = ref(null);
+// 本次要上传到的目录（相对 rootPath，已解码，用 / 分隔）
+const uploadDestPath = ref('');
+
+// currentPath 的各段是 URL 编码过的，而后端 /upload 的 destPath 要解码后的相对路径
+const decodeCurrentPath = () => {
+  return (currentPath.value || '')
+    .split('/')
+    .filter(Boolean)
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch (e) {
+        return segment;
+      }
+    })
+    .join('/');
+};
+
+// targetFolder 为空表示上传到当前目录，否则为当前目录下的某个文件夹
+const openUploadPicker = (targetFolder) => {
+  const base = decodeCurrentPath();
+  uploadDestPath.value = targetFolder
+    ? (base ? `${base}/${targetFolder}` : targetFolder)
+    : base;
+  uploadInputRef.value?.click();
+};
+
+const onUploadFilesChange = async (event) => {
+  const files = Array.from(event.target.files || []);
+  // 立即重置，保证连续选择同一个文件也能再次触发 change
+  event.target.value = '';
+  if (!files.length) return;
+  await uploadFiles(files, uploadDestPath.value);
+};
+
+// 后端一次只收一个文件，这里串行发送，避免并发打满带宽与连接数
+const uploadFiles = async (files, destPath) => {
+  const toast = showLoadingToast({
+    message: files.length > 1 ? `上传中 (1/${files.length})` : '上传中…',
+    forbidClick: true,
+    duration: 0,
+  });
+  let okCount = 0;
+  const errors = [];
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const prefix = files.length > 1 ? `(${i + 1}/${files.length}) ` : '';
+    try {
+      await uploadSingleFile(file, destPath, (percent) => {
+        toast.message = `${prefix}${percent}% ${file.name}`;
+      });
+      okCount++;
+    } catch (err) {
+      errors.push(`${file.name}：${err?.response?.data?.msg || err?.message || '上传失败'}`);
+    }
+  }
+
+  toast.close();
+
+  if (errors.length === 0) {
+    showToast(files.length > 1 ? `${okCount} 个文件上传成功` : '上传成功');
+  } else if (okCount > 0) {
+    showToast(`${okCount} 个成功，${errors.length} 个失败：${errors[0]}`);
+  } else {
+    showToast(`上传失败：${errors[0]}`);
+  }
+  if (errors.length) {
+    console.warn('上传失败明细：', errors);
+  }
+  if (okCount > 0) {
+    getFileList();
+  }
+};
+
+const uploadSingleFile = (file, destPath, onProgress) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('destPath', destPath || '');
+  // 不手动设置 Content-Type，交给浏览器补 multipart boundary
+  return axios.post(`${serverBaseUrl.value}/upload`, formData, {
+    timeout: 0,
+    onUploadProgress: (e) => {
+      if (!onProgress || !e.total) return;
+      // 留一点余量，最后 1% 等服务端落盘
+      onProgress(Math.min(99, Math.round((e.loaded / e.total) * 100)));
+    },
+  }).then((res) => res.data);
+};
 
 const playVideo = (t) => {
   showDialog.value = false;
@@ -960,6 +1074,10 @@ onUnmounted(() => {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.upload-input {
+  display: none;
 }
 
 ::v-deep(.van-nav-bar) {

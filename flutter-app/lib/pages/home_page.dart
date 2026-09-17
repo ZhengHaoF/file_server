@@ -884,6 +884,9 @@ class _HomePageState extends State<HomePage> {
     return InkWell(
       onTap: () => _onFileTap(index),
       onLongPress: () => _onFileLongPress(index),
+      // 桌面端（Windows/macOS/Linux）用鼠标右键唤出同一份操作菜单。
+      // 右键只在有指针设备时触发，触屏设备仍走长按，两个入口并存。
+      onSecondaryTapDown: (_) => _onFileLongPress(index),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Row(
@@ -971,6 +974,7 @@ class _HomePageState extends State<HomePage> {
     return InkWell(
       onTap: () => _onFileTap(index),
       onLongPress: () => _onFileLongPress(index),
+      onSecondaryTapDown: (_) => _onFileLongPress(index),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [

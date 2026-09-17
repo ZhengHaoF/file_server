@@ -268,7 +268,8 @@ CREATE TABLE image (
 - ⚠️ 现实是 `/delFile`、`/renameFile`、`/cleanOldData/:day` **至今没有任何鉴权**，只有路径校验；`/upload` 靠 `uploadEnabled` 开关 + `uploadMaxSizeMB` + 扩展名黑名单做边界控制，**同样没有身份认证**；`/restartServer` 只有明文口令。当前所有"写"接口都只在可信内网可用。
 - ⚠️ `POST /upload` 的扩展名黑名单（`.html/.htm/.xhtml/.shtml/.js/.mhtml/.svg`）是拦截「上传可内联执行文件 → 同源 XSS 提权」的关键防线，**新增上传文件类型时不要轻易放行**。
 - ⚠️ 管理后台令牌 = `restartPwd`（默认 `123456`），没有过期、没有 session、明文存前端 `localStorage`。**不要**把它当成真正的访问控制，也不要在前端硬编码。
-- 当前 HTTPS 证书是仓库内的 `server/cert/`，**仅供本地/内网测试**，生产环境请替换为可信 CA 签发证书。
+- 当前 HTTPS 证书是仓库内的 `server/cert/`（2048 位 RSA 自签，有效期 10 年），**仅供本地/内网测试**，生产环境请替换为可信 CA 签发证书。
+- ⚠️ **密钥不得短于 2048 位**：Node 24 及以后（OpenSSL 3.5）会拒绝加载弱密钥，启动时在 `https.createServer()` 直接抛 `ERR_SSL_EE_KEY_TOO_SMALL` 并退出，**连 HTTP 端口都无法监听**（Node 22 及更早还能容忍 1024 位）。重新生成：`openssl req -x509 -newkey rsa:2048 -keyout cert/private.pem -out cert/file.crt -days 3650 -nodes -subj "/C=CN/ST=Zhejiang/L=Hangzhou/O=file-serve/CN=localhost"`（私钥不能加密码，index.js 直接用 `readFileSync` 读取）。
 
 ### 5.3 缓存键与文件命名
 
@@ -391,7 +392,7 @@ flutter build web
 - `shared/API_DOCUMENTATION.md` 只覆盖用户端接口，`/api/admin/*` 与 WebSocket 完全没有文档；同时该文档在 `web/`、`flutter-app/` 下还有内容分叉的副本，缺乏单一可信来源。
 - `admin/admin-server.js` 无 script 引用，且与 `base: '/admin/'` 的路径约定冲突，实际不可用。
 - `web/` 下 `package-lock.json` 与 `pnpm-lock.yaml` 并存，包管理器不统一；`web/utils/` 位于 `src/` 之外，位置可疑。
-- HTTPS 证书是仓库内置的自签证书，仅适合本地测试。
+- HTTPS 证书是仓库内置的自签证书（2048 位 RSA），仅适合本地测试；换成 1024 位密钥会让 Node 24 起不来（`ERR_SSL_EE_KEY_TOO_SMALL`）。
 
 ---
 

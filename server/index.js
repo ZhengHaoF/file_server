@@ -12,6 +12,7 @@ import cors from 'cors';
 import stripBom from 'strip-bom';
 import sharp from 'sharp';
 import log4js from 'log4js';
+import multer from 'multer';
 import ffmpeg from 'fluent-ffmpeg';
 import ffmpegStatic from 'ffmpeg-static';
 
@@ -66,6 +67,46 @@ if (!fs.existsSync(imgCache)) {
 }
 
 const restartPwd = config['restartPwd'];
+
+// ── 上传功能（POST /upload）相关 ──
+const UPLOAD_BLOCKED_EXTS = new Set(['.html', '.htm', '.xhtml', '.shtml', '.js', '.mhtml', '.svg']);
+const uploadStagingDir = path.join(imgCache, '.upload_tmp');
+fs.mkdirSync(uploadStagingDir, { recursive: true });
+
+class UploadBlockedError extends Error {
+    constructor(message) {
+        super(message);
+        this.code = 'BLOCKED_EXT';
+    }
+}
+
+// 修复 multipart 文件名：latin1 误解码回退 + 非法字符消毒（防 Windows 非法字符与路径遍历）
+const fixUploadFilename = (name) => {
+    if (!name) return 'unnamed';
+    let fixed = name;
+    if (!/[^\u0000-\u00FF]/.test(fixed) && /[\u0080-\u00FF]/.test(fixed)) {
+        const converted = Buffer.from(fixed, 'latin1').toString('utf8');
+        if (/[^\u0000-\u00FF]/.test(converted)) fixed = converted;
+    }
+    fixed = path.basename(fixed)
+        .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
+        .replace(/[. ]+$/, '');
+    return fixed || 'unnamed';
+};
+
+// 跨磁盘移动：rename 失败（EXDEV）时退化为 copy + unlink
+const moveFile = (src, dest) => {
+    try {
+        fs.renameSync(src, dest);
+    } catch (err) {
+        if (err.code === 'EXDEV') {
+            fs.copyFileSync(src, dest);
+            fs.unlinkSync(src);
+        } else {
+            throw err;
+        }
+    }
+};
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
 let credentials = { key: privateKey, cert: certificate };
@@ -463,6 +504,94 @@ app.post('/renameFile', (req, res) => {
         return res.status(500).json({ msg: '重命名失败' });
     }
 });
+
+// 上传文件
+app.post('/upload',
+    (req, res, next) => {
+        try {
+            const cfg = JSON.parse(stripBom(fs.readFileSync("config.json", 'utf8')));
+            if (cfg.uploadEnabled !== true) {
+                return res.status(403).json({ msg: '上传功能未启用' });
+            }
+            const maxSizeMB = Number(cfg.uploadMaxSizeMB) > 0 ? Number(cfg.uploadMaxSizeMB) : 4096;
+            req.uploadMaxBytes = maxSizeMB * 1024 * 1024;
+            next();
+        } catch (err) {
+            logger.error(`读取上传配置失败：${err.message}`);
+            return res.status(500).json({ msg: '读取上传配置失败' });
+        }
+    },
+    (req, res, next) => {
+        const uploadMiddleware = multer({
+            storage: multer.diskStorage({
+                destination: (r, file, cb) => cb(null, uploadStagingDir),
+                filename: (r, file, cb) => cb(null, crypto.randomUUID()),
+            }),
+            limits: { fileSize: req.uploadMaxBytes },
+            fileFilter: (r, file, cb) => {
+                const ext = path.extname(file.originalname || '').toLowerCase();
+                if (UPLOAD_BLOCKED_EXTS.has(ext)) {
+                    return cb(new UploadBlockedError('该类型文件不允许上传'));
+                }
+                cb(null, true);
+            },
+        }).single('file');
+        uploadMiddleware(req, res, next);
+    },
+    (req, res) => {
+        try {
+            if (!req.file) {
+                return res.status(400).json({ msg: '缺少文件' });
+            }
+            const stagedPath = req.file.path;
+            const destPath = (req.body.destPath || '').trim();
+            const rootResolved = path.resolve(rootPath);
+            const fullDir = path.resolve(path.join(rootPath, destPath));
+
+            if (!validatePath(fullDir, rootResolved)) {
+                fs.unlinkSync(stagedPath);
+                return res.status(403).json({ msg: '非法路径访问' });
+            }
+            if (!fs.existsSync(fullDir)) {
+                fs.unlinkSync(stagedPath);
+                return res.status(404).json({ msg: '目录不存在' });
+            }
+            if (!fs.statSync(fullDir).isDirectory()) {
+                fs.unlinkSync(stagedPath);
+                return res.status(400).json({ msg: '目标不是文件夹' });
+            }
+
+            const finalName = fixUploadFilename(req.file.originalname);
+            const finalPath = path.join(fullDir, finalName);
+
+            if (fs.existsSync(finalPath)) {
+                fs.unlinkSync(stagedPath);
+                return res.status(409).json({ msg: '目标文件已存在' });
+            }
+
+            moveFile(stagedPath, finalPath);
+            const size = fs.statSync(finalPath).size;
+            logger.info(`上传成功：${finalName} -> ${finalPath} (${size} 字节)`);
+            return res.json({ msg: '上传成功', name: finalName, size });
+        } catch (err) {
+            logger.error(`上传失败：${err.message}`);
+            try {
+                if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+            } catch (e) { /* 忽略清理异常 */ }
+            return res.status(500).json({ msg: '文件上传失败' });
+        }
+    },
+    (err, req, res, next) => {
+        if (err instanceof UploadBlockedError) {
+            return res.status(400).json({ msg: err.message });
+        }
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ msg: '文件超过大小限制' });
+        }
+        logger.error(`上传过程错误：${err.message}`);
+        return res.status(500).json({ msg: '文件上传失败' });
+    }
+);
 
 app.post('/restartServer', (req, res) => {
     if (String(req.body.pwd) === String(restartPwd)) {

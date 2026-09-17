@@ -757,8 +757,9 @@ const uploadFiles = async (files, destPath) => {
 
 const uploadSingleFile = (file, destPath, onProgress) => {
   const formData = new FormData();
-  formData.append('file', file);
+  // destPath 必须先于 file 追加：后端在 multer 的 destination 回调里读它来决定落盘目录
   formData.append('destPath', destPath || '');
+  formData.append('file', file);
   // 不手动设置 Content-Type，交给浏览器补 multipart boundary
   return axios.post(`${serverBaseUrl.value}/upload`, formData, {
     timeout: 0,

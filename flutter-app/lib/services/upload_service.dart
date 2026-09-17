@@ -89,6 +89,7 @@ class UploadService extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // destPath 必须排在 file 之前：后端在 multer 的 destination 回调里读取它决定落盘目录
       final formData = FormData.fromMap({
         'destPath': task.destPath,
         'file': await MultipartFile.fromFile(

@@ -70,13 +70,21 @@ const restartPwd = config['restartPwd'];
 
 // ── 上传功能（POST /upload）相关 ──
 const UPLOAD_BLOCKED_EXTS = new Set(['.html', '.htm', '.xhtml', '.shtml', '.js', '.mhtml', '.svg']);
-const uploadStagingDir = path.join(imgCache, '.upload_tmp');
-fs.mkdirSync(uploadStagingDir, { recursive: true });
+// 上传中的临时文件名前缀：临时文件写在最终位置所在的目录，上传完成后同盘改名（元数据操作，O(1)）
+const UPLOAD_TMP_PREFIX = '.fsupload-';
 
 class UploadBlockedError extends Error {
     constructor(message) {
         super(message);
         this.code = 'BLOCKED_EXT';
+    }
+}
+
+// 目标目录校验失败（带对应 HTTP 状态码）
+class UploadTargetError extends Error {
+    constructor(message, status) {
+        super(message);
+        this.status = status;
     }
 }
 
@@ -94,18 +102,21 @@ const fixUploadFilename = (name) => {
     return fixed || 'unnamed';
 };
 
-// 跨磁盘移动：rename 失败（EXDEV）时退化为 copy + unlink
-const moveFile = (src, dest) => {
-    try {
-        fs.renameSync(src, dest);
-    } catch (err) {
-        if (err.code === 'EXDEV') {
-            fs.copyFileSync(src, dest);
-            fs.unlinkSync(src);
-        } else {
-            throw err;
-        }
+// 解析并校验目标目录（destPath 相对 rootPath），返回绝对路径，失败抛 UploadTargetError
+const resolveUploadDir = (destPathRaw) => {
+    const destPath = String(destPathRaw == null ? '' : destPathRaw).trim();
+    const rootResolved = path.resolve(rootPath);
+    const fullDir = path.resolve(path.join(rootPath, destPath));
+    if (!validatePath(fullDir, rootResolved)) {
+        throw new UploadTargetError('非法路径访问', 403);
     }
+    if (!fs.existsSync(fullDir)) {
+        throw new UploadTargetError('目录不存在', 404);
+    }
+    if (!fs.statSync(fullDir).isDirectory()) {
+        throw new UploadTargetError('目标不是文件夹', 400);
+    }
+    return fullDir;
 };
 let privateKey = fs.readFileSync('./cert/private.pem', 'utf8');
 let certificate = fs.readFileSync('./cert/file.crt', 'utf8');
@@ -524,8 +535,20 @@ app.post('/upload',
     (req, res, next) => {
         const uploadMiddleware = multer({
             storage: multer.diskStorage({
-                destination: (r, file, cb) => cb(null, uploadStagingDir),
-                filename: (r, file, cb) => cb(null, crypto.randomUUID()),
+                // 直写目标目录（随机临时名），上传完成后同盘改名，避免跨盘双写
+                destination: (r, file, cb) => {
+                    // destination 回调只能看到 file 字段之前已解析的表单字段
+                    if (!Object.prototype.hasOwnProperty.call(r.body || {}, 'destPath')) {
+                        return cb(new UploadTargetError('缺少 destPath 字段，且该字段必须排在 file 之前', 400));
+                    }
+                    try {
+                        r.uploadTargetDir = resolveUploadDir(r.body.destPath);
+                        cb(null, r.uploadTargetDir);
+                    } catch (err) {
+                        cb(err);
+                    }
+                },
+                filename: (r, file, cb) => cb(null, UPLOAD_TMP_PREFIX + crypto.randomUUID()),
             }),
             limits: { fileSize: req.uploadMaxBytes },
             fileFilter: (r, file, cb) => {
@@ -543,33 +566,26 @@ app.post('/upload',
             if (!req.file) {
                 return res.status(400).json({ msg: '缺少文件' });
             }
-            const stagedPath = req.file.path;
-            const destPath = (req.body.destPath || '').trim();
-            const rootResolved = path.resolve(rootPath);
-            const fullDir = path.resolve(path.join(rootPath, destPath));
-
-            if (!validatePath(fullDir, rootResolved)) {
-                fs.unlinkSync(stagedPath);
-                return res.status(403).json({ msg: '非法路径访问' });
-            }
-            if (!fs.existsSync(fullDir)) {
-                fs.unlinkSync(stagedPath);
-                return res.status(404).json({ msg: '目录不存在' });
-            }
-            if (!fs.statSync(fullDir).isDirectory()) {
-                fs.unlinkSync(stagedPath);
-                return res.status(400).json({ msg: '目标不是文件夹' });
-            }
-
+            const tmpPath = req.file.path;
+            const targetDir = req.uploadTargetDir || path.dirname(tmpPath);
             const finalName = fixUploadFilename(req.file.originalname);
-            const finalPath = path.join(fullDir, finalName);
+            const finalPath = path.join(targetDir, finalName);
 
             if (fs.existsSync(finalPath)) {
-                fs.unlinkSync(stagedPath);
+                fs.unlinkSync(tmpPath);
                 return res.status(409).json({ msg: '目标文件已存在' });
             }
 
-            moveFile(stagedPath, finalPath);
+            try {
+                fs.renameSync(tmpPath, finalPath);
+            } catch (err) {
+                if (err.code === 'EEXIST') {
+                    // 极小概率的并发竞态：同名文件在检查之后被创建
+                    fs.unlinkSync(tmpPath);
+                    return res.status(409).json({ msg: '目标文件已存在' });
+                }
+                throw err;
+            }
             const size = fs.statSync(finalPath).size;
             logger.info(`上传成功：${finalName} -> ${finalPath} (${size} 字节)`);
             return res.json({ msg: '上传成功', name: finalName, size });
@@ -584,6 +600,9 @@ app.post('/upload',
     (err, req, res, next) => {
         if (err instanceof UploadBlockedError) {
             return res.status(400).json({ msg: err.message });
+        }
+        if (err instanceof UploadTargetError) {
+            return res.status(err.status).json({ msg: err.message });
         }
         if (err.code === 'LIMIT_FILE_SIZE') {
             return res.status(413).json({ msg: '文件超过大小限制' });

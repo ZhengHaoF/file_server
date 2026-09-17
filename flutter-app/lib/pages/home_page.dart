@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -41,6 +42,8 @@ class _HomePageState extends State<HomePage> {
   String _viewMode = 'list';
   bool _hasDialogOpen = false;
   bool _uploadQueued = false;
+  // 有文件正被拖到窗口上方（桌面端用来显示投放提示）
+  bool _isDragging = false;
   DateTime? _lastBackPress;
 
   @override
@@ -825,7 +828,22 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: Stack(
+      body: _buildBodyWithDropTarget(files),
+      ),
+    );
+  }
+
+  /// 文件区域：桌面端可把文件直接拖进窗口，上传到当前打开的目录
+  Widget _buildBodyWithDropTarget(List<FileInfo> files) {
+    return DropTarget(
+      onDragEntered: (detail) {
+        if (mounted) setState(() => _isDragging = true);
+      },
+      onDragExited: (detail) {
+        if (mounted) setState(() => _isDragging = false);
+      },
+      onDragDone: _handleDropFiles,
+      child: Stack(
         children: [
           if (files.isEmpty && !_isLoading)
             const Center(child: Text('当前数据为空'))
@@ -852,10 +870,85 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
+          if (_isDragging) _buildDropHint(),
         ],
       ),
+    );
+  }
+
+  /// 拖拽悬停时的投放提示
+  Widget _buildDropHint() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.45),
+          alignment: Alignment.center,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _themeColor, width: 2),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.upload_file, size: 48, color: _themeColor),
+                const SizedBox(height: 14),
+                const Text(
+                  '松手即上传到当前目录',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _pathDisplayText,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
+  }
+
+  /// 处理拖入的文件：过滤掉文件夹后交给上传队列（目标目录即当前目录）
+  Future<void> _handleDropFiles(DropDoneDetails detail) async {
+    if (mounted) setState(() => _isDragging = false);
+
+    final picked = <PlatformFile>[];
+    var skippedFolders = 0;
+
+    for (final file in detail.files) {
+      try {
+        // 后端 /upload 一次只接收一个文件，暂不支持整个文件夹
+        if (await FileSystemEntity.isDirectory(file.path)) {
+          skippedFolders++;
+          continue;
+        }
+        picked.add(PlatformFile(
+          name: file.name,
+          path: file.path,
+          size: await file.length(),
+        ));
+      } catch (e) {
+        // 单个文件读取失败不影响其余文件
+      }
+    }
+
+    if (picked.isEmpty) {
+      if (mounted) {
+        _showSnack(skippedFolders > 0 ? '暂不支持拖入文件夹' : '拖入的项目无法上传');
+      }
+      return;
+    }
+
+    if (skippedFolders > 0 && mounted) {
+      _showSnack('已跳过 $skippedFolders 个文件夹（暂不支持）');
+    }
+    _enqueueUploads(picked);
   }
 
   Widget _buildListView(List<FileInfo> files) {

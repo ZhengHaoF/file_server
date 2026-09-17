@@ -3,7 +3,11 @@ packages:
   - 'web'
   - 'admin'
 
-onlyBuiltDependencies:
-  - better-sqlite3
-  - images
-  - sharp
+# pnpm 11 起，允许执行构建脚本的依赖必须逐一声明。
+# 未列出的依赖视为「未审阅」，strictDepBuilds（默认 true）下安装会直接失败。
+# better-sqlite3 / sharp / images 为原生模块，ffmpeg-static 需在 postinstall 下载二进制。
+allowBuilds:
+  better-sqlite3: true
+  ffmpeg-static: true
+  images: true
+  sharp: true

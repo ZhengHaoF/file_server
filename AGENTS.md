@@ -36,7 +36,6 @@ file-serve/
 ├── server/                          # 后端服务（自包含）
 │   ├── index.js                     # 主入口：HTTP/HTTPS 服务与所有 API
 │   ├── sqllite.js                   # better-sqlite3 封装
-│   ├── build.js                     # 打包脚本（dist/ 输出 + npm install）
 │   ├── init.js                      # 初始化：清空 imgCache、logs、数据库
 │   ├── clean.js                     # 清理过期（默认 30 天）缓存数据
 │   ├── start.js                     # 守护进程：监控 index.js 退出并自动重启
@@ -100,6 +99,7 @@ file-serve/
 │   └── API_DOCUMENTATION.md         # API 接口文档（用户端接口，不含 /api/admin）
 │
 ├── package.json                     # 根 workspace（仅 scripts）
+├── assemble.js                      # 产物装配脚本：构建 web+admin 并同步到 server/
 ├── pnpm-workspace.yaml              # pnpm 工作空间配置
 ├── AGENTS.md                        # 本文档
 ├── README.md                        # 项目说明
@@ -130,6 +130,7 @@ file-serve/
 | GET  | `/list/:filePath(*)` | 无 | 列出目录（`$` 代替 `/`，`$$` 为根），支持 `sta/end` 分页 |
 | POST | `/delFile` | **无** | 删除文件或递归删除文件夹 |
 | POST | `/renameFile` | **无** | 重命名/移动；校验 `validatePath`，禁止操作根目录，目标已存在返回 409 |
+| POST | `/upload` | **无（需 `uploadEnabled` 开关）** | multipart 单文件上传；校验 `validatePath`，409 同名 / 413 超限 / 扩展名黑名单 |
 | POST | `/restartServer` | `restartPwd` | 密码校验后 `process.exit(0)`，由 `start.js` 拉起 |
 | GET  | `/cleanOldData/:day` | **无** | 调用 `sql.cleanOldData(day)` 清理过期缓存 |
 | GET  | `/getVideoPreview/:path(*)` | 无 | 生成/读取视频缩略图（缓存到 `imgCache`） |
@@ -156,7 +157,7 @@ file-serve/
 - `imageInterceptor` 在拼接 `rootPath + filePath` 之前会先校验一次。
 - `delFile`、`renameFile`、`getVideoPreview`、图片中间件 都已加入同样的 `validatePath` 校验，**新增文件相关路由时必须复用该函数**。
 - `renameFile` 额外拦截了「重命名根目录」，并对目标已存在返回 409。
-- ⚠️ **路径遍历已被拦住，但写入类接口没有任何身份认证**：`/delFile`、`/renameFile`、`/cleanOldData/:day` 任意人可调用；`/restartServer` 只有一个明文口令比对。公网部署前必须补认证中间件。
+- ⚠️ **路径遍历已被拦住，但写入类接口没有任何身份认证**：`/delFile`、`/renameFile`、`/cleanOldData/:day` 任意人可调用；`/upload` 仅在 `uploadEnabled: true` 时开放（同样**无鉴权**，靠开关 + 大小上限 + 扩展名黑名单做边界控制）；`/restartServer` 只有一个明文口令比对。公网部署前必须补认证中间件。
 
 **图片缩放 URL 协议**：
 ```
@@ -181,18 +182,22 @@ CREATE TABLE image (
 
 > 修改表结构时需考虑旧 `imgCache.db` 的兼容：可新增列，但不要直接 `DROP`。
 
-### 3.3 `server/build.js`
+### 3.3 `assemble.js`（根目录，产物装配）
 
-执行 `npm run build` 会：
+后端本身**没有打包流程**，改代码后直接 `npm install` + `node start.js` 运行即可（普通项目式部署）。唯一需要"装配"的是前端产物——后端运行时托管 `server/web/`（用户前端）并检查 `server/admin/dist`（管理面板）。
 
-1. 删除并重建 `dist/`
-2. 跑 `node init.js`（清空缓存与日志）
-3. 拷贝源码、配置、`cert/`、`web/`、`node.exe`、`启动.bat`
-4. 构建 `admin/` 管理面板并复制到 `dist/admin/`
-5. 在 `dist/` 内写入裁剪过的 `package.json`
-6. 在 `dist/` 内执行 `npm install`
+执行 `npm run assemble`（等价 `node assemble.js`）会：
 
-`--upbuild` 模式（`npm run upbuild`）只复制源码与 `web/`，用于增量更新。
+1. 构建 `web/`（vite → `web/dist`）
+2. 构建 `admin/`（vite → `admin/dist`）
+3. 把 `web/dist` **整体同步**到 `server/web/`
+4. 把 `admin/dist` 整体同步到 `server/admin/dist/`
+
+> 同步方式是「删目标目录后整体复制」，保证无旧文件残留。⚠️ `index.js` 只在进程**启动时判断一次** `admin/dist` 是否存在，**装配后必须重启后端**管理面板才会挂载。
+
+**部署模型**：目标机 = `git clone/pull` + `npm install`（server 下）+ `node start.js`（或 `启动.bat`，会自动装依赖并启动）；web/admin 有改动时才需要重新 `npm run assemble`。
+
+`npm run build:all` 等价 `npm run assemble`；`build:web` / `build:admin` 仅单独构建各自产物（不搬运）。
 
 ### 3.4 `server/start.js`
 
@@ -230,13 +235,17 @@ CREATE TABLE image (
 {
   "rootPath": "C:\\Users\\zheng\\Downloads",
   "imgCache": "./imgCache",
-  "restartPwd": "123456"
+  "restartPwd": "123456",
+  "uploadEnabled": false,
+  "uploadMaxSizeMB": 4096
 }
 ```
 
 - `rootPath`：共享目录的根，**绝对路径**更稳。
 - `imgCache`：相对路径时相对进程工作目录（即 `server/`）。
 - `restartPwd`：`String(req.body.pwd) === String(restartPwd)` 比较，**类型必须一致**（注意数字与字符串）。
+- `uploadEnabled`：上传接口开关，`=== true` 严格判断，缺字段视为关闭（老配置零迁移）。**无鉴权**，仅适合可信内网。
+- `uploadMaxSizeMB`：单文件上传上限（MB），缺失默认 4096。
 - ⚠️ `restartPwd` **同时充当 `/api/admin/*` 的管理令牌**（`adminAuth.js` 直接比对 `X-Admin-Token`）。改这个值等于同时改重启口令和后台登录口令。
 
 ---
@@ -256,7 +265,8 @@ CREATE TABLE image (
 
 - 任何涉及用户可控路径的接口，**必须**调用 `validatePath(fullPath, rootPath)`，否则存在路径遍历。
 - 涉及删除/写入/重启的接口必须有授权（如密码）或边界限制。
-- ⚠️ 现实是 `/delFile`、`/renameFile`、`/cleanOldData/:day` **至今没有任何鉴权**，只有路径校验；`/restartServer` 只有明文口令。当前所有"写"接口都只在可信内网可用。
+- ⚠️ 现实是 `/delFile`、`/renameFile`、`/cleanOldData/:day` **至今没有任何鉴权**，只有路径校验；`/upload` 靠 `uploadEnabled` 开关 + `uploadMaxSizeMB` + 扩展名黑名单做边界控制，**同样没有身份认证**；`/restartServer` 只有明文口令。当前所有"写"接口都只在可信内网可用。
+- ⚠️ `POST /upload` 的扩展名黑名单（`.html/.htm/.xhtml/.shtml/.js/.mhtml/.svg`）是拦截「上传可内联执行文件 → 同源 XSS 提权」的关键防线，**新增上传文件类型时不要轻易放行**。
 - ⚠️ 管理后台令牌 = `restartPwd`（默认 `123456`），没有过期、没有 session、明文存前端 `localStorage`。**不要**把它当成真正的访问控制，也不要在前端硬编码。
 - 当前 HTTPS 证书是仓库内的 `server/cert/`，**仅供本地/内网测试**，生产环境请替换为可信 CA 签发证书。
 
@@ -289,10 +299,10 @@ pnpm run dev:web         # 启动 Web 前端
 pnpm run dev:admin       # 启动管理面板
 
 # 构建各子项目
-pnpm run build:server    # 构建后端
-pnpm run build:web       # 构建 Web 前端
-pnpm run build:admin     # 构建管理面板
-pnpm run build:all       # 构建所有
+pnpm run build:web       # 构建 Web 前端（仅产物，不搬运）
+pnpm run build:admin     # 构建管理面板（仅产物，不搬运）
+pnpm run assemble        # 构建 web+admin 并同步到 server/web、server/admin/dist
+pnpm run build:all       # 等价 assemble
 ```
 
 ### 后端命令（在 `server/` 目录执行）
@@ -312,10 +322,6 @@ node start.js
 
 # 清理 30 天前的缓存
 node clean.js
-
-# 打包发布（输出到 dist/）
-npm run build
-npm run upbuild   # 仅打包更新文件
 
 # Docker
 docker compose up -d
@@ -344,14 +350,15 @@ flutter build web
 1. **新增路由**：
    - 必须放在 `app.use('/getFile', rangeInterceptor, express.static(rootPath))` 之后，**避免被静态中间件吞掉**（除非你确实想优先静态）。
    - 涉及路径的，复制 `validatePath` 校验。
+   - 上传类路由参照 `/upload` 的三段式：开关守卫（每次读 config，热生效）→ `multer` 磁盘暂存 `imgCache/.upload_tmp` → 校验落盘（409/413/黑名单），最后用**四参错误中间件**兜底 multer 的 `LIMIT_FILE_SIZE` 与自定义错误。
    - 涉及缓存的，沿用 `crypto.createHash('sha256')` 命名规则并在 `sqllite.js` 添加对应方法。
    - 新增管理接口挂到 `server/routes/admin.js`（会自动继承 `/api/admin` 前的 `adminAuth`），不要绕过它自己 `app.get`。
    - 改了 `admin/` 源码后要重新构建 **并重启后端**，否则 `/admin` 挂载判断不会刷新。
 
 2. **新增依赖**：
-   - 后端：更新 `server/package.json`，同步更新 `server/build.js` 内 `distPackageJson.dependencies`。
+   - 后端：更新 `server/package.json` 即可（后端无打包流程，`assemble.js` 只负责 web/admin 产物同步，不涉及后端依赖）；含原生模块的包（`sharp` / `better-sqlite3` / `ffmpeg-static`）在目标机 `npm install` 时按目标机 Node 编译，打包机无需与之一致。Docker 场景 `server/Dockerfile`（alpine 已预装编译工具）无需调整。
    - 前端：更新对应子项目的 `package.json`（`web/` 或 `admin/`）。
-   - 如果是 `sharp` / `better-sqlite3` / `ffmpeg-static` 这类含原生模块的包，`server/Dockerfile` 也需要相应调整（alpine 需要预装编译工具）。
+     - 如果新增**其他**含原生模块的包（不在 `sharp` / `better-sqlite3` / `ffmpeg-static` 之列），需要同步调整 `server/Dockerfile`（alpine 需要预装对应编译工具）。
 
 3. **修改数据库结构**：
    - 改 `server/sqllite.js` 的 `init()`，并评估是否需要迁移脚本（项目目前没有迁移机制，建议手动 `node init.js` 后再启动）。
@@ -374,14 +381,14 @@ flutter build web
 
 ## 8. 已知遗留问题
 
-- `server/build.js` 中 `execCommand('cd dist && cd && npm install')` 写法有误，依赖的是进程默认 cwd 而非 `dist/`。建议改为：在 `dist/` 下 spawn `npm install`。
+- 后端已改「普通项目式」部署（无打包流程）：`server/build.js` 与 `dist/` 已删除，前端产物装配统一走根级 `assemble.js`。目标机部署 = git 拉取 + `npm install` + `node start.js`；**web/admin 有改动时需 `npm run assemble` 并重启后端**，`admin` 面板只在进程启动时检查并挂载一次。
 - `server/index.js` 中 `W` / `H` 解析后未做 `Number.isFinite` 校验，传 `abc` 会让 sharp 抛错。
-- `/delFile`、`/renameFile`、`/cleanOldData/:day` 没有任何鉴权，仅靠路径校验；在公网部署需加认证中间件。
+- `/delFile`、`/renameFile`、`/cleanOldData/:day` 没有任何鉴权，仅靠路径校验；`/upload` 只靠 `uploadEnabled` 开关，同样无鉴权（默认关闭但配置即暴露）；在公网部署需加认证中间件。
+- `POST /upload` 的暂存目录是 `imgCache/.upload_tmp`（与缓存同卷，跨卷用 copy+unlink 兜底）；`node init.js` 会连缓存一起清掉，请勿在其中放置任何非临时内容。
 - 管理后台鉴权与 `restartPwd` 强耦合，且无 session/过期/失败限速（见 §3.6）。若要加固，需单独设计登录换 token 协议（改动涉及前后端）。
 - `shared/API_DOCUMENTATION.md` 只覆盖用户端接口，`/api/admin/*` 与 WebSocket 完全没有文档；同时该文档在 `web/`、`flutter-app/` 下还有内容分叉的副本，缺乏单一可信来源。
 - `admin/admin-server.js` 无 script 引用，且与 `base: '/admin/'` 的路径约定冲突，实际不可用。
 - `web/` 下 `package-lock.json` 与 `pnpm-lock.yaml` 并存，包管理器不统一；`web/utils/` 位于 `src/` 之外，位置可疑。
-- `server/mime.json` 已存在但未被 `index.js` 引用，文件下载时浏览器依赖扩展名猜测 MIME。
 - HTTPS 证书是仓库内置的自签证书，仅适合本地测试。
 
 ---

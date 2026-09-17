@@ -307,6 +307,54 @@ GET /getVideoPreview/videos/movie.mp4
 
 ---
 
+### 8. 上传文件
+
+**端点**: `POST /upload`
+
+**描述**: 上传单个文件到指定目录（multipart/form-data）。**该接口无任何身份认证**，启用与否完全由 `config.json` 的 `uploadEnabled` 开关控制；仅在可信内网部署，公网部署前必须补鉴权。
+
+**请求格式**: `multipart/form-data`
+
+| 字段 | 类型 | 必填 | 描述 |
+|------|------|------|------|
+| file | binary | 是 | 文件内容，字段名固定为 `file`，一次一个文件 |
+| destPath | string | 否 | 目标目录（相对 rootPath 的路径），空字符串表示根目录 |
+
+**响应示例**:
+```json
+{
+  "msg": "上传成功",
+  "name": "example.jpg",
+  "size": 102400
+}
+```
+
+**功能说明**:
+- 每次请求仅支持一个文件；客户端多文件场景应排队逐个发送
+- 文件名取自 `file` 字段的文件名；会过滤非法字符并做编码修复（保留中文名）
+- 同名文件直接拒绝（不自动改名、不覆盖）
+- 禁止上传内联可执行的扩展名：`.html .htm .xhtml .shtml .js .mhtml .svg`
+- 大小上限由 `config.json` 的 `uploadMaxSizeMB` 控制（默认 4096，即 4GB），按实际传输字节数截断，不信任 Content-Length
+
+**使用示例**:
+```bash
+# 上传到根目录
+curl -F "destPath=" -F "file=@./photo.jpg" http://localhost:3000/upload
+
+# 上传到子目录
+curl -F "destPath=images" -F "file=@./photo.jpg" http://localhost:3000/upload
+```
+
+**错误响应**:
+- 400: 缺少文件 / 目标不是文件夹 / 该类型文件不允许上传
+- 403: 上传功能未启用（`uploadEnabled` 不为 true） / 非法路径访问
+- 404: 目标目录不存在
+- 409: 目标文件已存在
+- 413: 文件超过大小限制（`uploadMaxSizeMB`）
+- 500: 上传失败 / 读取上传配置失败
+
+---
+
 ## 静态资源
 
 ### Web 前端
@@ -335,6 +383,7 @@ GET /getVideoPreview/videos/movie.mp4
 | 403 | 禁止访问（路径遍历攻击拦截） |
 | 404 | 资源不存在 |
 | 409 | 冲突（目标名称已存在） |
+| 413 | 请求体过大（超出 uploadMaxSizeMB，仅 /upload） |
 | 416 | Range Not Satisfiable（请求的字节范围无效） |
 | 500 | 服务器内部错误 |
 
@@ -348,7 +397,9 @@ GET /getVideoPreview/videos/movie.mp4
 {
   "rootPath": "/path/to/files",
   "imgCache": "./imgCache",
-  "restartPwd": "your_password"
+  "restartPwd": "your_password",
+  "uploadEnabled": false,
+  "uploadMaxSizeMB": 4096
 }
 ```
 
@@ -356,7 +407,9 @@ GET /getVideoPreview/videos/movie.mp4
 |--------|------|
 | rootPath | 服务器根目录路径 |
 | imgCache | 图片缓存目录路径 |
-| restartPwd | 重启服务器密码 |
+| restartPwd | 重启服务器密码（同时充当管理后台令牌） |
+| uploadEnabled | 是否启用上传接口（默认 false；无鉴权，需部署在可信内网） |
+| uploadMaxSizeMB | 单文件上传大小上限，单位 MB（默认 4096） |
 
 ---
 
@@ -434,4 +487,10 @@ curl -H "Range: bytes=0-1023" -o partial.dat http://localhost:3000/getFile/video
 
 # Range 请求（断点续传，从上次中断位置继续）
 curl -H "Range: bytes=1048576-" -o resume.dat http://localhost:3000/getFile/videos/movie.mp4
+
+# 上传文件到根目录（需要 config.json 开启 uploadEnabled）
+curl -F "destPath=" -F "file=@./photo.jpg" http://localhost:3000/upload
+
+# 上传文件到 images 子目录
+curl -F "destPath=images" -F "file=@./archive.zip" http://localhost:3000/upload
 ```

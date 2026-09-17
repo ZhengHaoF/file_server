@@ -33,7 +33,7 @@ server/imgCache/
 server/imgCache.db
 server/logs/
 
-# node 可执行文件（通过 build.js 打包时包含）
+# node 可执行文件（历史打包/捆绑方案遗留，保持忽略）
 server/node.exe
 server/node.zip
 
@@ -66,3 +66,9 @@ flutter-app/.metadata
 
 后端接口修改方案.md
 前端实施文档.md
+
+# ==============================
+# AI 助手本地工作区（记忆 / 技能，不入库）
+# ==============================
+
+.workbuddy/

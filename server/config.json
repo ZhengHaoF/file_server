@@ -2,6 +2,6 @@
     "rootPath": "C:\\Users\\zheng\\Downloads",
     "imgCache":"./imgCache",
     "restartPwd":"123456",
-    "uploadEnabled": false,
+    "uploadEnabled": true,
     "uploadMaxSizeMB": 4096
 }

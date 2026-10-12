@@ -132,18 +132,18 @@ class MainActivity : FlutterActivity() {
             val uri = resolver.insert(collection, values)
             if (uri != null) {
                 try {
-                val output = resolver.openOutputStream(uri)
-                    ?: throw IllegalStateException("Cannot open output stream")
-                output.use { outputStream ->
-                    tempFile.inputStream().use { inputStream ->
-                        inputStream.copyTo(outputStream)
+                    val output = resolver.openOutputStream(uri)
+                        ?: throw IllegalStateException("Cannot open output stream")
+                    output.use { outputStream ->
+                        tempFile.inputStream().use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
                     }
-                }
-                val committed = resolver.update(uri, ContentValues().apply {
-                    put(MediaStore.MediaColumns.IS_PENDING, 0)
-                }, null, null)
-                check(committed == 1) { "Cannot commit saved file" }
-                result.success(uri.toString())
+                    val committed = resolver.update(uri, ContentValues().apply {
+                        put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    }, null, null)
+                    check(committed == 1) { "Cannot commit saved file" }
+                    result.success(uri.toString())
                 } catch (e: Exception) {
                     resolver.delete(uri, null, null)
                     throw e

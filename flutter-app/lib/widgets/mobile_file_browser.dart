@@ -367,6 +367,24 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
                               size: 40,
                             ),
                           ),
+                        if (_selected.isEmpty)
+                          Align(
+                            alignment: Alignment.topRight,
+                            child: IconButton(
+                              tooltip: '文件操作',
+                              style: IconButton.styleFrom(
+                                backgroundColor: Theme.of(
+                                  context,
+                                ).colorScheme.surface.withValues(alpha: 0.85),
+                              ),
+                              constraints: const BoxConstraints(
+                                minHeight: 48,
+                                minWidth: 48,
+                              ),
+                              icon: const Icon(Icons.more_vert),
+                              onPressed: () => widget.onMore(file),
+                            ),
+                          ),
                         if (selected)
                           const Align(
                             alignment: Alignment.topRight,
@@ -380,26 +398,10 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
                   ),
                   Padding(
                     padding: const EdgeInsets.all(8),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            file.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (_selected.isEmpty)
-                          IconButton(
-                            tooltip: '文件操作',
-                            constraints: const BoxConstraints(
-                              minHeight: 48,
-                              minWidth: 48,
-                            ),
-                            icon: const Icon(Icons.more_vert),
-                            onPressed: () => widget.onMore(file),
-                          ),
-                      ],
+                    child: Text(
+                      file.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],

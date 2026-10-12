@@ -52,6 +52,24 @@ void main() {
   );
   setUp(events.clear);
 
+  testWidgets(
+    'grid names retain tile width and menu works without opening file',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(browser(grid: true, files: [item('照片_00.jpg')]));
+      await tester.pumpAndSettle();
+      final nameWidth = tester.getSize(find.text('照片_00.jpg')).width;
+      expect(nameWidth, greaterThan(80));
+      await tester.tap(find.byTooltip('文件操作').first);
+      await tester.pump();
+      expect(events, ['more:照片_00.jpg']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('back clears selection before invoking root back', (
     tester,
   ) async {

@@ -270,6 +270,22 @@ test('append pagination follows uncompressed rotation and reports expired archiv
     });
 });
 
+test('append paging refuses a cursor after its file was truncated', async (t) => {
+    const f = await fixture(t);
+    const file = path.join(f.logs, 'app.log');
+    await fs.promises.writeFile(
+        file,
+        '[2026-10-11T12:00:00.000Z] [INFO] [default] first\n' +
+            '[2026-10-11T12:01:00.000Z] [INFO] [default] second\n',
+    );
+    const first = await f.runtime.logs.query({ order: 'append', limit: 1 });
+    assert.ok(first.nextCursor);
+    await fs.promises.truncate(file, 0);
+    await assert.rejects(f.runtime.logs.query({ order: 'append', before: first.nextCursor }), {
+        status: 409,
+    });
+});
+
 test('append tail reads a bounded portion of the active log and handles UTF-8 across blocks', async (t) => {
     const f = await fixture(t);
     const file = path.join(f.logs, 'app.log');

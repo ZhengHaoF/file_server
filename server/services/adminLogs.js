@@ -144,6 +144,9 @@ export function createAdminLogs(logsDir) {
                 appendOrder && identity === boundary?.position?.identity
                     ? boundary.position.offset
                     : Infinity;
+            if (Number.isFinite(before) && !file.endsWith('.gz') && before >= stat.size) {
+                throw new HttpError(409, '日志游标对应的文件已截断，请刷新');
+            }
             const records = appendOrder ? reverseLogRecords(file, before) : forwardLogRecords(file);
             for await (const { line, offset } of records) {
                 if (!line.trim()) continue;

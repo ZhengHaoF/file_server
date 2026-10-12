@@ -296,7 +296,11 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     } else {
-      await showModalBottomSheet<void>(context: context, builder: builder);
+      await showModalBottomSheet<void>(
+        context: context,
+        useRootNavigator: true,
+        builder: builder,
+      );
     }
   }
 

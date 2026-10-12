@@ -6,6 +6,7 @@ import '../utils/server_address.dart';
 Future<bool?> showServerConnection(BuildContext context) =>
     showModalBottomSheet<bool>(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       useSafeArea: true,
       builder: (_) => const ServerConnectionSheet(),

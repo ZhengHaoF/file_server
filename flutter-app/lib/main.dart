@@ -6,11 +6,13 @@ import 'router/app_router.dart';
 import 'services/download_service.dart';
 import 'services/storage_service.dart';
 import 'services/upload_service.dart';
+import 'services/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();
   await StorageService().init();
+  restoreAppTheme();
   if (!kIsWeb) {
     await DownloadService().init();
     await UploadService().init();
@@ -23,21 +25,16 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'Z-Files',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFFf6823b),
-          brightness: Brightness.light,
-        ),
-        useMaterial3: true,
-        appBarTheme: const AppBarTheme(
-          centerTitle: true,
-          elevation: 0,
-        ),
+    return AnimatedBuilder(
+      animation: Listenable.merge([appThemeMode, appThemeRevision]),
+      builder: (context, _) => MaterialApp.router(
+        title: 'Z-Files',
+        debugShowCheckedModeBanner: false,
+        theme: buildAppTheme(Brightness.light),
+        darkTheme: buildAppTheme(Brightness.dark),
+        themeMode: appThemeMode.value,
+        routerConfig: appRouter,
       ),
-      routerConfig: appRouter,
     );
   }
 }

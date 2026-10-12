@@ -59,12 +59,15 @@ class ApiService {
     return {'Authorization': 'Bearer $_sessionToken'};
   }
 
-  Future<void> _ensureTicket() async {
+  Future<void> _ensureTicket({CancelToken? cancelToken}) async {
     if (_sessionToken == null ||
         _ticketExpiresAt > DateTime.now().millisecondsSinceEpoch + 60000) {
       return;
     }
-    final response = await _dio.post('$_serverBaseUrl/api/auth/ticket');
+    final response = await _dio.post(
+      '$_serverBaseUrl/api/auth/ticket',
+      cancelToken: cancelToken,
+    );
     _readTicket = response.data['readTicket'] as String;
     _ticketExpiresAt = (response.data['ticketExpiresAt'] as num).toInt();
   }
@@ -110,15 +113,19 @@ class ApiService {
     throw Exception(msg);
   }
 
-  Future<List<FileInfo>> getFileList(String currentPath) async {
+  Future<List<FileInfo>> getFileList(
+    String currentPath, {
+    CancelToken? cancelToken,
+  }) async {
     try {
-      await _ensureTicket();
+      await _ensureTicket(cancelToken: cancelToken);
       final list = <dynamic>[];
       var start = 0;
       while (true) {
         final response = await _dio.get(
           '$_serverBaseUrl/list/${Uri.encodeComponent(currentPath.isEmpty ? r'$' : currentPath)}',
           queryParameters: {'sta': start, 'end': start + 500},
+          cancelToken: cancelToken,
         );
         _checkResponse(response);
         list.addAll(response.data['list'] as List<dynamic>);
@@ -136,6 +143,7 @@ class ApiService {
         );
       }).toList();
     } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) rethrow;
       if (e.response?.statusCode == 401) {
         throw Exception('请在设置中登录文件服务');
       }

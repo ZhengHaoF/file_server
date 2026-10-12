@@ -51,25 +51,27 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('传输任务'),
-          centerTitle: true,
+          centerTitle: MediaQuery.sizeOf(context).width < 700,
           actions: [
-            Builder(builder: (context) {
-              final index = DefaultTabController.of(context).index;
-              final hasTerminal = index == 0
-                  ? _downloadService.tasks.any((t) => t.status.terminal)
-                  : _uploadService.tasks.any((t) => t.status.terminal);
-              if (!hasTerminal) return const SizedBox.shrink();
-              return TextButton(
-                onPressed: () {
-                  if (index == 0) {
-                    _downloadService.clearCompleted();
-                  } else {
-                    _uploadService.clearCompleted();
-                  }
-                },
-                child: const Text('清空已完成'),
-              );
-            }),
+            Builder(
+              builder: (context) {
+                final index = DefaultTabController.of(context).index;
+                final hasTerminal = index == 0
+                    ? _downloadService.tasks.any((t) => t.status.terminal)
+                    : _uploadService.tasks.any((t) => t.status.terminal);
+                if (!hasTerminal) return const SizedBox.shrink();
+                return TextButton(
+                  onPressed: () {
+                    if (index == 0) {
+                      _downloadService.clearCompleted();
+                    } else {
+                      _uploadService.clearCompleted();
+                    }
+                  },
+                  child: const Text('清空已完成'),
+                );
+              },
+            ),
           ],
           bottom: const TabBar(
             tabs: [
@@ -78,11 +80,13 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
             ],
           ),
         ),
-        body: TabBarView(
-          children: [
-            _buildDownloadList(),
-            _buildUploadList(),
-          ],
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1100),
+            child: TabBarView(
+              children: [_buildDownloadList(), _buildUploadList()],
+            ),
+          ),
         ),
       ),
     );
@@ -112,7 +116,8 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
           onRetry: () => _downloadService.retryDownload(tasks[index].id),
           onCancel: () => _downloadService.cancelDownload(tasks[index].id),
           onRemove: () => _downloadService.removeTask(tasks[index].id),
-          onDeleteFile: () => _downloadService.removeTask(tasks[index].id, deleteFile: true),
+          onDeleteFile: () =>
+              _downloadService.removeTask(tasks[index].id, deleteFile: true),
           onOpen: () => _openFile(tasks[index]),
         );
       },
@@ -124,9 +129,9 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
     final file = File(task.savePath);
     if (!file.existsSync()) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('文件不存在')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('文件不存在')));
       }
       return;
     }
@@ -135,20 +140,19 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
     final localPath = task.savePath;
 
     if (FileTypeUtils.isVideo(suffix)) {
-      context.push('/video-play', extra: {
-        'url': localPath,
-        'videoList': <dynamic>[],
-        'currentIndex': 0,
-      });
+      context.push(
+        '/video-play',
+        extra: {'url': localPath, 'videoList': <dynamic>[], 'currentIndex': 0},
+      );
     } else if (FileTypeUtils.isImg(suffix)) {
       _showImagePreview(localPath);
     } else if (FileTypeUtils.isAudio(suffix)) {
       context.push('/audio-play?url=${Uri.encodeComponent(localPath)}');
     } else if (FileTypeUtils.isText(suffix)) {
-      context.push('/text-view', extra: {
-        'url': localPath,
-        'fileName': task.fileName,
-      });
+      context.push(
+        '/text-view',
+        extra: {'url': localPath, 'fileName': task.fileName},
+      );
     } else {
       final uri = Uri.file(task.savePath);
       if (await canLaunchUrl(uri)) {
@@ -225,7 +229,9 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
       return;
     }
 
-    final controller = TextEditingController(text: _conflictSuggestion(task.fileName));
+    final controller = TextEditingController(
+      text: _conflictSuggestion(task.fileName),
+    );
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -314,14 +320,20 @@ class _DownloadTaskItem extends StatelessWidget {
                         children: [
                           Text(
                             task.fileName,
-                            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 4),
                           Text(
                             _buildInfoText(),
-                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
                           ),
                         ],
                       ),
@@ -353,7 +365,11 @@ class _DownloadTaskItem extends StatelessWidget {
   Widget _buildStatusIcon() {
     switch (task.status) {
       case AppDownloadStatus.enqueued:
-        return const Icon(Icons.hourglass_empty, size: 24, color: Colors.orange);
+        return const Icon(
+          Icons.hourglass_empty,
+          size: 24,
+          color: Colors.orange,
+        );
       case AppDownloadStatus.downloading:
         return const SizedBox(
           width: 24,
@@ -496,14 +512,20 @@ class _UploadTaskItem extends StatelessWidget {
                       children: [
                         Text(
                           task.fileName,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 4),
                         Text(
                           _buildInfoText(),
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
                         ),
                       ],
                     ),
@@ -534,7 +556,11 @@ class _UploadTaskItem extends StatelessWidget {
   Widget _buildStatusIcon() {
     switch (task.status) {
       case AppUploadStatus.enqueued:
-        return const Icon(Icons.hourglass_empty, size: 24, color: Colors.orange);
+        return const Icon(
+          Icons.hourglass_empty,
+          size: 24,
+          color: Colors.orange,
+        );
       case AppUploadStatus.uploading:
         return const SizedBox(
           width: 24,

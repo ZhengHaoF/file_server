@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:desktop_drop/desktop_drop.dart';
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -17,10 +18,13 @@ import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/storage_service.dart';
 import '../services/upload_service.dart';
+import '../services/app_theme.dart';
 import '../utils/date_utils.dart';
 import '../utils/file_type_utils.dart';
 import '../widgets/file_icon.dart';
 import '../widgets/network_log_dialog.dart';
+import '../widgets/desktop_file_browser.dart';
+import '../utils/file_browser_utils.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -45,20 +49,42 @@ class _HomePageState extends State<HomePage> {
   // 有文件正被拖到窗口上方（桌面端用来显示投放提示）
   bool _isDragging = false;
   DateTime? _lastBackPress;
+  String? _loadError;
+  int _loadGeneration = 0;
+  CancelToken? _listCancel;
+  final List<String> _history = [];
+  int _historyIndex = 0;
+
+  bool get _desktop =>
+      (kIsWeb && MediaQuery.sizeOf(context).width >= 700) ||
+      defaultTargetPlatform == TargetPlatform.windows ||
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.macOS;
 
   @override
   void initState() {
     super.initState();
     _currentPath = widget.path ?? '';
+    _history.add(_currentPath);
     _viewMode = _storage.model;
     UploadService().addListener(_onUploadUpdate);
+    DownloadService().addListener(_onTransferUpdate);
+    UploadService().addListener(_onTransferUpdate);
     _loadFileList();
   }
 
   @override
   void dispose() {
+    _listCancel?.cancel('页面已关闭');
+    _loadGeneration++;
     UploadService().removeListener(_onUploadUpdate);
+    UploadService().removeListener(_onTransferUpdate);
+    DownloadService().removeListener(_onTransferUpdate);
     super.dispose();
+  }
+
+  void _onTransferUpdate() {
+    if (mounted) setState(() {});
   }
 
   void _onUploadUpdate() {
@@ -79,63 +105,40 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _loadFileList() async {
-    setState(() => _isLoading = true);
+    if (!mounted) return;
+    _listCancel?.cancel('已发起新的目录请求');
+    final cancel = _listCancel = CancelToken();
+    final generation = ++_loadGeneration;
+    final path = _currentPath;
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
 
     try {
-      final list = await _apiService.getFileList(_currentPath);
+      final list = await _apiService.getFileList(path, cancelToken: cancel);
+      if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _fileList = list;
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _fileList = [];
-        _isLoading = false;
-      });
-      if (e is Exception && e.toString().contains('404')) {
-        _goToRoot();
-      } else if (mounted) {
-        final msg = e is Exception ? e.toString().replaceFirst('Exception: ', '') : e.toString();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg)),
-        );
+      if (!mounted || generation != _loadGeneration || cancel.isCancelled) {
+        return;
       }
+      setState(() {
+        _isLoading = false;
+        _loadError = e.toString().replaceFirst('Exception: ', '');
+      });
     }
   }
 
   List<FileInfo> _getSortedFileList() {
-    List<FileInfo> sorted = List.from(_fileList);
-
-    switch (_storage.fileSort) {
-      case 'timeStoB':
-        sorted.sort((a, b) => a.mtime.compareTo(b.mtime));
-        break;
-      case 'timeBtoS':
-        sorted.sort((a, b) => b.mtime.compareTo(a.mtime));
-        break;
-      case 'sizeStoB':
-        sorted.sort((a, b) => b.sizeRow.compareTo(a.sizeRow));
-        break;
-      case 'sizeBtoS':
-        sorted.sort((a, b) => a.sizeRow.compareTo(b.sizeRow));
-        break;
-      case 'nameStoB':
-        sorted.sort((a, b) => a.name.compareTo(b.name));
-        break;
-      case 'nameBtoS':
-        sorted.sort((a, b) => b.name.compareTo(a.name));
-        break;
-    }
-
-    if (_storage.folderSort == 'start') {
-      final folders = sorted.where((f) => f.isDirectory).toList();
-      final files = sorted.where((f) => f.isFile).toList();
-      return [...folders, ...files];
-    } else {
-      final folders = sorted.where((f) => f.isDirectory).toList();
-      final files = sorted.where((f) => f.isFile).toList();
-      return [...files, ...folders];
-    }
+    return sortBrowserFiles(
+      _fileList,
+      _storage.fileSort,
+      foldersFirst: _storage.folderSort == 'start',
+    );
   }
 
   List<FileInfo> _getImageFilteredFileList() {
@@ -147,19 +150,65 @@ class _HomePageState extends State<HomePage> {
 
   String get _pathDisplayText {
     if (_currentPath.isEmpty) return '根目录';
-    final segments = _currentPath.split('/').where((s) => s.isNotEmpty).toList();
+    final segments = _currentPath
+        .split('/')
+        .where((s) => s.isNotEmpty)
+        .toList();
     return segments.last;
   }
 
   bool get _isRoot => _currentPath.isEmpty;
 
   void _enterDirectory(String dirName) {
-    final newPath = _currentPath.isNotEmpty ? '$_currentPath/$dirName' : dirName;
+    final newPath = _currentPath.isNotEmpty
+        ? '$_currentPath/$dirName'
+        : dirName;
+    if (_desktop) {
+      _navigateDesktop(newPath);
+      return;
+    }
     context.push('/browse', extra: newPath);
   }
 
-  void _goToRoot() {
-    context.go('/');
+  void _navigateDesktop(String path, {bool record = true}) {
+    if (path == _currentPath) return;
+    setState(() {
+      _currentPath = path;
+      _fileList = [];
+      _loadError = null;
+      if (record) {
+        _history.removeRange(_historyIndex + 1, _history.length);
+        _history.add(path);
+        _historyIndex = _history.length - 1;
+      }
+    });
+    _loadFileList();
+  }
+
+  void _moveHistory(int delta) {
+    final next = _historyIndex + delta;
+    if (next < 0 || next >= _history.length) return;
+    _historyIndex = next;
+    _navigateDesktop(_history[next], record: false);
+  }
+
+  void _openDesktopFile(FileInfo file) {
+    if (file.isDirectory) {
+      _enterDirectory(file.name);
+    } else if (FileTypeUtils.isImg(file.suffix)) {
+      _showImagePreview(file);
+    } else if (FileTypeUtils.isVideo(file.suffix)) {
+      _showVideoActions(file, 0);
+    } else if (FileTypeUtils.isAudio(file.suffix)) {
+      context.push('/audio-play?url=${Uri.encodeComponent(file.url ?? '')}');
+    } else if (FileTypeUtils.isText(file.suffix)) {
+      context.push(
+        '/text-view',
+        extra: {'url': file.url ?? '', 'fileName': file.name},
+      );
+    } else {
+      _showFileActions(file, 0);
+    }
   }
 
   Color get _themeColor {
@@ -172,7 +221,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _onFileTap(int index) {
-    final files = _viewMode == 'img' ? _getImageFilteredFileList() : _getSortedFileList();
+    final files = _viewMode == 'img'
+        ? _getImageFilteredFileList()
+        : _getSortedFileList();
     if (index >= files.length) return;
 
     final fileInfo = files[index];
@@ -189,19 +240,23 @@ class _HomePageState extends State<HomePage> {
     } else if (FileTypeUtils.isImg(suffix)) {
       _showMediaActions(fileInfo, index);
     } else if (FileTypeUtils.isAudio(suffix)) {
-      context.push('/audio-play?url=${Uri.encodeComponent(fileInfo.url ?? '')}');
+      context.push(
+        '/audio-play?url=${Uri.encodeComponent(fileInfo.url ?? '')}',
+      );
     } else if (FileTypeUtils.isText(suffix)) {
-      context.push('/text-view', extra: {
-        'url': fileInfo.url ?? '',
-        'fileName': fileInfo.name,
-      });
+      context.push(
+        '/text-view',
+        extra: {'url': fileInfo.url ?? '', 'fileName': fileInfo.name},
+      );
     } else {
       _showFileActions(fileInfo, index);
     }
   }
 
   void _onFileLongPress(int index) {
-    final files = _viewMode == 'img' ? _getImageFilteredFileList() : _getSortedFileList();
+    final files = _viewMode == 'img'
+        ? _getImageFilteredFileList()
+        : _getSortedFileList();
     if (index >= files.length) return;
 
     final fileInfo = files[index];
@@ -218,6 +273,25 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _showActionPanel({
+    required BuildContext context,
+    required WidgetBuilder builder,
+  }) async {
+    if (_desktop) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: SingleChildScrollView(child: builder(dialogContext)),
+          ),
+        ),
+      );
+    } else {
+      await showModalBottomSheet<void>(context: context, builder: builder);
+    }
+  }
+
   void _showVideoActions(FileInfo fileInfo, int index) {
     final playMode = _storage.playMode;
 
@@ -227,7 +301,7 @@ class _HomePageState extends State<HomePage> {
       _openVideoPlayer(fileInfo);
     } else {
       setState(() => _hasDialogOpen = true);
-      showModalBottomSheet(
+      _showActionPanel(
         context: context,
         builder: (context) => SafeArea(
           child: Column(
@@ -263,14 +337,19 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openVideoPlayer(FileInfo fileInfo) {
-    final videoList = _fileList.where((f) => FileTypeUtils.isVideo(f.suffix)).toList();
+    final videoList = _fileList
+        .where((f) => FileTypeUtils.isVideo(f.suffix))
+        .toList();
     final currentIndex = videoList.indexWhere((v) => v.name == fileInfo.name);
 
-    context.push('/video-play', extra: {
-      'url': fileInfo.url ?? '',
-      'videoList': videoList,
-      'currentIndex': currentIndex >= 0 ? currentIndex : 0,
-    });
+    context.push(
+      '/video-play',
+      extra: {
+        'url': fileInfo.url ?? '',
+        'videoList': videoList,
+        'currentIndex': currentIndex >= 0 ? currentIndex : 0,
+      },
+    );
   }
 
   void _launchVlc(String url) async {
@@ -283,7 +362,7 @@ class _HomePageState extends State<HomePage> {
 
   void _showMediaActions(FileInfo fileInfo, int index) {
     setState(() => _hasDialogOpen = true);
-    showModalBottomSheet(
+    _showActionPanel(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
@@ -351,7 +430,7 @@ class _HomePageState extends State<HomePage> {
 
   void _showFileActions(FileInfo fileInfo, int index) {
     setState(() => _hasDialogOpen = true);
-    showModalBottomSheet(
+    _showActionPanel(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
@@ -411,7 +490,7 @@ class _HomePageState extends State<HomePage> {
 
   void _showFolderActions(FileInfo fileInfo, int index) {
     setState(() => _hasDialogOpen = true);
-    showModalBottomSheet(
+    _showActionPanel(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
@@ -480,7 +559,10 @@ class _HomePageState extends State<HomePage> {
       if (_storage.viewOriginalImage) {
         return f.url ?? '';
       }
-      final w = (MediaQuery.of(context).size.width * MediaQuery.of(context).devicePixelRatio).round();
+      final w =
+          (MediaQuery.of(context).size.width *
+                  MediaQuery.of(context).devicePixelRatio)
+              .round();
       return ApiService.imagePreviewUrl(f.url ?? '', w);
     }).toList();
 
@@ -500,40 +582,44 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _copyUrl(FileInfo fileInfo) {
-    final url = fileInfo.url ?? '';
+    final url = fileInfo.url ?? fileInfo.path ?? fileInfo.name;
     Clipboard.setData(ClipboardData(text: url));
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('链接已复制到剪贴板')),
+      SnackBar(content: Text(fileInfo.isDirectory ? '路径已复制到剪贴板' : '链接已复制到剪贴板')),
     );
   }
 
-  void _downloadFile(FileInfo fileInfo) async {
-    final url = fileInfo.url ?? '';
-    if (kIsWeb) {
-      // Web 端降级到浏览器下载
-      final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    } else {
-      // 非 Web 端使用内置下载管理
-      DownloadService().startDownload(
-        url,
-        fileInfo.name,
-        fileInfo.path ?? '',
-        fileSize: fileInfo.sizeRow,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已加入下载队列')),
+  Future<void> _downloadFile(FileInfo fileInfo) async {
+    try {
+      final url = fileInfo.url ?? '';
+      if (kIsWeb) {
+        // Web 端降级到浏览器下载
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      } else {
+        // 非 Web 端使用内置下载管理
+        await DownloadService().startDownload(
+          url,
+          fileInfo.name,
+          fileInfo.path ?? '',
+          fileSize: fileInfo.sizeRow,
         );
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('已加入下载队列')));
+        }
       }
+    } catch (_) {
+      if (mounted) _showSnack('无法加入下载队列，请检查保存目录或队列容量');
     }
   }
 
   void _showUploadSheet() {
     setState(() => _hasDialogOpen = true);
-    showModalBottomSheet(
+    _showActionPanel(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
@@ -548,15 +634,18 @@ class _HomePageState extends State<HomePage> {
                 _pickAndUpload();
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.photo_camera),
-              title: const Text('拍照上传'),
-              subtitle: const Text('拍照后直接上传到当前目录'),
-              onTap: () {
-                Navigator.pop(context);
-                _takePhotoAndUpload();
-              },
-            ),
+            if (!kIsWeb &&
+                (defaultTargetPlatform == TargetPlatform.android ||
+                    defaultTargetPlatform == TargetPlatform.iOS))
+              ListTile(
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('拍照上传'),
+                subtitle: const Text('拍照后直接上传到当前目录'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _takePhotoAndUpload();
+                },
+              ),
             ListTile(
               leading: const Text('取消'),
               onTap: () => Navigator.pop(context),
@@ -642,6 +731,7 @@ class _HomePageState extends State<HomePage> {
         content: Text(message),
         actions: [
           TextButton(
+            autofocus: true,
             onPressed: () => Navigator.pop(context),
             child: const Text('取消'),
           ),
@@ -666,17 +756,19 @@ class _HomePageState extends State<HomePage> {
       if (success) {
         _loadFileList();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('删除成功')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('删除成功')));
         }
       }
     } catch (e) {
       if (mounted) {
-        final msg = e is Exception ? e.toString().replaceFirst('Exception: ', '') : e.toString();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: $msg')),
-        );
+        final msg = e is Exception
+            ? e.toString().replaceFirst('Exception: ', '')
+            : e.toString();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('删除失败: $msg')));
       }
     }
   }
@@ -717,26 +809,37 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _renameFile(FileInfo fileInfo, String newName) async {
     if (newName.isEmpty || newName == fileInfo.name) return;
+    if (newName == '.' ||
+        newName == '..' ||
+        newName.contains('/') ||
+        newName.contains(r'\')) {
+      if (mounted) _showSnack('名称不能包含路径分隔符或相对目录');
+      return;
+    }
 
     final oldPath = fileInfo.path ?? '';
     final lastSlash = oldPath.lastIndexOf('/');
-    final parentPath = lastSlash >= 0 ? oldPath.substring(0, lastSlash + 1) : '';
+    final parentPath = lastSlash >= 0
+        ? oldPath.substring(0, lastSlash + 1)
+        : '';
     final newPath = '$parentPath$newName';
 
     try {
       await _apiService.renameFile(oldPath, newPath);
       _loadFileList();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('重命名成功')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('重命名成功')));
       }
     } catch (e) {
       if (mounted) {
-        final msg = e is Exception ? e.toString().replaceFirst('Exception: ', '') : e.toString();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('重命名失败: $msg')),
-        );
+        final msg = e is Exception
+            ? e.toString().replaceFirst('Exception: ', '')
+            : e.toString();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('重命名失败: $msg')));
       }
     }
   }
@@ -749,11 +852,25 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _openSettings() {
+    final previousServer = _apiService.serverBaseUrl;
+    _listCancel?.cancel('正在修改连接设置');
+    _loadGeneration++;
+    setState(() => _isLoading = false);
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const SettingsPage()),
     ).then((_) {
-      setState(() {});
+      if (!mounted) return;
+      setState(() {
+        if (previousServer != _apiService.serverBaseUrl) {
+          _fileList = [];
+          _currentPath = '';
+          _history
+            ..clear()
+            ..add('');
+          _historyIndex = 0;
+        }
+      });
       _loadFileList();
     });
   }
@@ -766,10 +883,14 @@ class _HomePageState extends State<HomePage> {
     }
 
     if (_lastBackPress == null ||
-        DateTime.now().difference(_lastBackPress!) > const Duration(seconds: 2)) {
+        DateTime.now().difference(_lastBackPress!) >
+            const Duration(seconds: 2)) {
       _lastBackPress = DateTime.now();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('再按一次返回关闭软件'), duration: Duration(seconds: 2)),
+        const SnackBar(
+          content: Text('再按一次返回关闭软件'),
+          duration: Duration(seconds: 2),
+        ),
       );
     } else {
       context.pop();
@@ -778,8 +899,74 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final files = _viewMode == 'img' ? _getImageFilteredFileList() : _getSortedFileList();
+    if (_desktop) {
+      return Scaffold(
+        body: _buildBodyWithDropTarget(
+          const [],
+          desktopChild: DesktopFileBrowser(
+            files: _viewMode == 'img' && _storage.onlyShowImages
+                ? _fileList
+                      .where(
+                        (f) => f.isDirectory || FileTypeUtils.isImg(f.suffix),
+                      )
+                      .toList()
+                : _fileList,
+            path: _currentPath,
+            server: _apiService.serverBaseUrl,
+            loading: _isLoading,
+            error: _loadError,
+            viewMode: _viewMode,
+            sort: _storage.fileSort,
+            foldersFirst: _storage.folderSort == 'start',
+            activeTransfers:
+                DownloadService().activeCount + UploadService().activeCount,
+            canBack: _historyIndex > 0,
+            canForward: _historyIndex < _history.length - 1,
+            onBack: () => _moveHistory(-1),
+            onForward: () => _moveHistory(1),
+            onNavigate: _navigateDesktop,
+            onRefresh: _loadFileList,
+            onUpload: _pickAndUpload,
+            onTransfers: () => context.push('/downloads'),
+            onSettings: _openSettings,
+            onTheme: () {
+              cycleAppTheme();
+              final label = switch (appThemeMode.value) {
+                ThemeMode.system => '跟随系统',
+                ThemeMode.light => '浅色',
+                ThemeMode.dark => '深色',
+              };
+              _showSnack('外观：$label');
+            },
+            onLogs: () => NetworkLogDialog.show(context),
+            onToggleView: _toggleViewMode,
+            onSort: (sort) => setState(() => _storage.fileSort = sort),
+            onOpen: _openDesktopFile,
+            onRename: _confirmRename,
+            onDelete: _confirmDelete,
+            onDownload: _downloadFile,
+            onCopy: _copyUrl,
+            thumbnail: (file) {
+              if (FileTypeUtils.isImg(file.suffix)) {
+                return ApiService.imagePreviewUrl(
+                  file.url ?? '',
+                  _storage.imgSize,
+                );
+              }
+              if (FileTypeUtils.isVideo(file.suffix) &&
+                  _storage.videoThumbnail) {
+                return _apiService.getVideoPreviewUrl(file.path ?? '');
+              }
+              return null;
+            },
+          ),
+        ),
+      );
+    }
 
+    final files = _viewMode == 'img'
+        ? _getImageFilteredFileList()
+        : _getSortedFileList();
     return PopScope(
       canPop: !_isRoot,
       onPopInvokedWithResult: (didPop, result) {
@@ -787,54 +974,57 @@ class _HomePageState extends State<HomePage> {
         _handleWillPop(context);
       },
       child: Scaffold(
-      appBar: AppBar(
-        leading: _isRoot
-            ? null
-            : IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () => context.pop(),
+        appBar: AppBar(
+          leading: _isRoot
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => context.pop(),
+                ),
+          title: Text(
+            _pathDisplayText,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+            overflow: TextOverflow.ellipsis,
+          ),
+          centerTitle: true,
+          actions: [
+            if (!kIsWeb)
+              IconButton(
+                icon: const Icon(Icons.upload),
+                tooltip: '上传到当前目录',
+                onPressed: _showUploadSheet,
               ),
-        title: Text(
-          _pathDisplayText,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-          overflow: TextOverflow.ellipsis,
+            if (!kIsWeb)
+              IconButton(
+                icon: const Icon(Icons.download),
+                tooltip: '下载管理',
+                onPressed: () => context.push('/downloads'),
+              ),
+            IconButton(
+              icon: const Icon(Icons.bug_report),
+              tooltip: '网络日志',
+              onPressed: () => NetworkLogDialog.show(context),
+            ),
+            IconButton(
+              icon: Icon(_viewMode == 'list' ? Icons.grid_view : Icons.list),
+              onPressed: _toggleViewMode,
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              onPressed: _openSettings,
+            ),
+          ],
         ),
-        centerTitle: true,
-        actions: [
-          if (!kIsWeb)
-            IconButton(
-              icon: const Icon(Icons.upload),
-              tooltip: '上传到当前目录',
-              onPressed: _showUploadSheet,
-            ),
-          if (!kIsWeb)
-            IconButton(
-              icon: const Icon(Icons.download),
-              tooltip: '下载管理',
-              onPressed: () => context.push('/downloads'),
-            ),
-          IconButton(
-            icon: const Icon(Icons.bug_report),
-            tooltip: '网络日志',
-            onPressed: () => NetworkLogDialog.show(context),
-          ),
-          IconButton(
-            icon: Icon(_viewMode == 'list' ? Icons.grid_view : Icons.list),
-            onPressed: _toggleViewMode,
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: _openSettings,
-          ),
-        ],
-      ),
-      body: _buildBodyWithDropTarget(files),
+        body: _buildBodyWithDropTarget(files),
       ),
     );
   }
 
   /// 文件区域：桌面端可把文件直接拖进窗口，上传到当前打开的目录
-  Widget _buildBodyWithDropTarget(List<FileInfo> files) {
+  Widget _buildBodyWithDropTarget(
+    List<FileInfo> files, {
+    Widget? desktopChild,
+  }) {
     return DropTarget(
       onDragEntered: (detail) {
         if (mounted) setState(() => _isDragging = true);
@@ -845,13 +1035,23 @@ class _HomePageState extends State<HomePage> {
       onDragDone: _handleDropFiles,
       child: Stack(
         children: [
-          if (files.isEmpty && !_isLoading)
+          if (desktopChild != null)
+            desktopChild
+          else if (_loadError != null)
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_loadError!, textAlign: TextAlign.center),
+                  TextButton(onPressed: _loadFileList, child: const Text('重试')),
+                ],
+              ),
+            )
+          else if (files.isEmpty && !_isLoading)
             const Center(child: Text('当前数据为空'))
           else
-            _viewMode == 'list'
-                ? _buildListView(files)
-                : _buildGridView(files),
-          if (_isLoading)
+            _viewMode == 'list' ? _buildListView(files) : _buildGridView(files),
+          if (_isLoading && desktopChild == null)
             Center(
               child: Container(
                 width: 120,
@@ -928,11 +1128,13 @@ class _HomePageState extends State<HomePage> {
           skippedFolders++;
           continue;
         }
-        picked.add(PlatformFile(
-          name: file.name,
-          path: file.path,
-          size: await file.length(),
-        ));
+        picked.add(
+          PlatformFile(
+            name: file.name,
+            path: file.path,
+            size: await file.length(),
+          ),
+        );
       } catch (e) {
         // 单个文件读取失败不影响其余文件
       }
@@ -1007,13 +1209,19 @@ class _HomePageState extends State<HomePage> {
                       Expanded(
                         child: Text(
                           AppDateUtils.formatDateTime(file.mtime),
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
                         ),
                       ),
                       if (file.isFile)
                         Text(
                           file.size,
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
                         ),
                     ],
                   ),
@@ -1083,12 +1291,13 @@ class _HomePageState extends State<HomePage> {
                           previewUrl,
                           fit: BoxFit.cover,
                           width: double.infinity,
-                          errorBuilder: (context, error, stackTrace) => FileIcon(
-                            suffix: file.suffix,
-                            isDirectory: file.isDirectory,
-                            size: 48,
-                            color: _themeColor,
-                          ),
+                          errorBuilder: (context, error, stackTrace) =>
+                              FileIcon(
+                                suffix: file.suffix,
+                                isDirectory: file.isDirectory,
+                                size: 48,
+                                color: _themeColor,
+                              ),
                         ),
                       ),
                     )
@@ -1159,13 +1368,18 @@ class _ImagePreviewDialogState extends State<_ImagePreviewDialog> {
             onPageChanged: (index) => setState(() => _currentIndex = index),
             builder: (context, index) {
               return PhotoViewGalleryPageOptions(
-                 imageProvider: NetworkImage(widget.imageUrls[index]),
-                 heroAttributes: PhotoViewHeroAttributes(tag: widget.heroTags[index]),
-                 minScale: PhotoViewComputedScale.contained,
-                 maxScale: PhotoViewComputedScale.covered * 5,
-                 errorBuilder: (context, error, stackTrace) =>
-                     const Icon(Icons.broken_image, color: Colors.white, size: 64),
-               );
+                imageProvider: NetworkImage(widget.imageUrls[index]),
+                heroAttributes: PhotoViewHeroAttributes(
+                  tag: widget.heroTags[index],
+                ),
+                minScale: PhotoViewComputedScale.contained,
+                maxScale: PhotoViewComputedScale.covered * 5,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Icons.broken_image,
+                  color: Colors.white,
+                  size: 64,
+                ),
+              );
             },
             backgroundDecoration: const BoxDecoration(color: Colors.black),
             loadingBuilder: (context, event) => const Center(
@@ -1186,7 +1400,10 @@ class _ImagePreviewDialogState extends State<_ImagePreviewDialog> {
             right: 0,
             child: Center(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: Colors.black54,
                   borderRadius: BorderRadius.circular(16),

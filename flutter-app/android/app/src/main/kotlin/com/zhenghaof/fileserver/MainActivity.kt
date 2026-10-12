@@ -2,6 +2,7 @@ package com.zhenghaof.fileserver
 
 import android.Manifest
 import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -13,19 +14,42 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.example.flutter_application_1/storage"
     private val PERMISSION_REQUEST_CODE = 1001
+    private var permissionResult: MethodChannel.Result? = null
+    private val storageExecutor = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
+                "getSdkVersion" -> result.success(Build.VERSION.SDK_INT)
+                "openSavedFile" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val uri = Uri.parse(args?.get("uri") as? String ?: "")
+                    if (uri.scheme != "content") {
+                        result.error("INVALID_URI", "Expected a content URI", null)
+                    } else {
+                        try {
+                            startActivity(Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, args?.get("mimeType") as? String ?: "*/*")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            })
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("OPEN_FAILED", e.message, null)
+                        }
+                    }
+                }
                 "requestStoragePermission" -> handleRequestStoragePermission(result)
                 "getExternalDownloads" -> handleGetExternalDownloads(result)
-                "insertMediaStore" -> handleInsertMediaStore(call.arguments as Map<*, *>, result)
+                "insertMediaStore" -> storageExecutor.execute {
+                    handleInsertMediaStore(call.arguments as Map<*, *>, result)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -44,14 +68,17 @@ class MainActivity : FlutterActivity() {
             return
         }
 
+        if (permissionResult != null) {
+            result.error("BUSY", "Permission request already in progress", null)
+            return
+        }
+        permissionResult = result
         ActivityCompat.requestPermissions(
             this,
             arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
             PERMISSION_REQUEST_CODE
         )
 
-        // 通过 onRequestPermissionsResult 回调需要额外逻辑，这里先返回 true 让调用方尝试写入
-        result.success(true)
     }
 
     private fun handleGetExternalDownloads(result: MethodChannel.Result) {
@@ -88,7 +115,8 @@ class MainActivity : FlutterActivity() {
                 } else {
                     collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
                 }
-                relativePath = Environment.DIRECTORY_MOVIES + "/Z-Files"
+                relativePath = (if (mimeType.startsWith("video/"))
+                    Environment.DIRECTORY_MOVIES else Environment.DIRECTORY_PICTURES) + "/Z-Files"
             } else {
                 collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
                 relativePath = Environment.DIRECTORY_DOWNLOADS + "/Z-Files"
@@ -98,16 +126,28 @@ class MainActivity : FlutterActivity() {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                 put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
                 put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
             }
 
             val uri = resolver.insert(collection, values)
             if (uri != null) {
-                resolver.openOutputStream(uri)?.use { outputStream ->
-                    tempFile.inputStream().use { inputStream ->
-                        inputStream.copyTo(outputStream)
+                try {
+                    val output = resolver.openOutputStream(uri)
+                        ?: throw IllegalStateException("Cannot open output stream")
+                    output.use { outputStream ->
+                        tempFile.inputStream().use { inputStream ->
+                            inputStream.copyTo(outputStream)
+                        }
                     }
+                    val committed = resolver.update(uri, ContentValues().apply {
+                        put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    }, null, null)
+                    check(committed == 1) { "Cannot commit saved file" }
+                    result.success(uri.toString())
+                } catch (e: Exception) {
+                    resolver.delete(uri, null, null)
+                    throw e
                 }
-                result.success(uri.toString())
             } else {
                 result.error("INSERT_FAILED", "Failed to insert into MediaStore", null)
             }
@@ -118,6 +158,17 @@ class MainActivity : FlutterActivity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        // 简单处理，不做额外回调
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            permissionResult?.success(grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED)
+            permissionResult = null
+        }
+    }
+
+    override fun onDestroy() {
+        permissionResult?.error("CLOSED", "Activity closed", null)
+        permissionResult = null
+        storageExecutor.shutdown()
+        super.onDestroy()
     }
 }

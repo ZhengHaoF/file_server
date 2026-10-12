@@ -53,6 +53,21 @@ class StorageService {
   set serverBaseUrl(String value) => _prefs.setString('serverBaseUrl', value);
 
   Future<void> clear() async {
-    await _prefs.clear();
+    // Reset display preferences only. Connection and transfer records survive.
+    for (final key in [
+      'model',
+      'appearance',
+      'imgSize',
+      'columns',
+      'playMode',
+      'fileSort',
+      'folderSort',
+      'themeColor',
+      'onlyShowImages',
+      'viewOriginalImage',
+      'videoThumbnail',
+    ]) {
+      await _prefs.remove(key);
+    }
   }
 }

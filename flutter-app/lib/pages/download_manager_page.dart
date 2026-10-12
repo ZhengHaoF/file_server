@@ -68,7 +68,7 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
                       _uploadService.clearCompleted();
                     }
                   },
-                  child: const Text('清空已完成'),
+                  child: const Text('清理结束记录'),
                 );
               },
             ),
@@ -125,6 +125,18 @@ class _DownloadManagerPageState extends State<DownloadManagerPage> {
   }
 
   void _openFile(AppDownloadTask task) async {
+    if (task.savedUri != null) {
+      try {
+        await _downloadService.openSavedFile(task);
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('无法打开系统保存的文件，请检查文件是否被移除或是否有可用应用')),
+          );
+        }
+      }
+      return;
+    }
     if (task.savePath.isEmpty) return;
     final file = File(task.savePath);
     if (!file.existsSync()) {
@@ -394,9 +406,9 @@ class _DownloadTaskItem extends StatelessWidget {
       case AppDownloadStatus.enqueued:
         return sizeStr.isNotEmpty ? sizeStr : '下载中...';
       case AppDownloadStatus.completed:
-        return '${sizeStr.isNotEmpty ? '$sizeStr · ' : ''}下载完成';
+        return '${sizeStr.isNotEmpty ? '$sizeStr · ' : ''}${task.savedUri != null ? '已保存到系统目录' : '已保存到本地'}';
       case AppDownloadStatus.failed:
-        return '下载失败';
+        return task.errorMsg ?? '下载失败';
       case AppDownloadStatus.canceled:
         return '已取消';
       case AppDownloadStatus.paused:
@@ -458,8 +470,12 @@ class _DownloadTaskItem extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('删除文件'),
-        content: Text('确定删除"${task.fileName}"？文件将从磁盘移除。'),
+        title: Text(task.savedUri != null ? '移除记录与预览缓存' : '删除本地下载'),
+        content: Text(
+          task.savedUri != null
+              ? '移除“${task.fileName}”的记录和临时预览；系统目录中已保存的文件会保留。'
+              : '删除“${task.fileName}”的本地文件与记录，不影响服务器原文件。',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -471,7 +487,7 @@ class _DownloadTaskItem extends StatelessWidget {
               onDeleteFile();
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('删除'),
+            child: Text(task.savedUri != null ? '移除' : '删除'),
           ),
         ],
       ),
@@ -578,7 +594,9 @@ class _UploadTaskItem extends StatelessWidget {
 
   String _buildInfoText() {
     final sizeStr = task.fileSize > 0 ? _formatSize(task.fileSize) : '';
-    final destStr = task.destPath.isEmpty ? '根目录' : task.destPath;
+    final server = task.serverUrl.isEmpty ? '未知服务器' : task.serverUrl;
+    final destStr =
+        '$server / ${task.destPath.isEmpty ? '根目录' : task.destPath}';
     switch (task.status) {
       case AppUploadStatus.uploading:
       case AppUploadStatus.enqueued:

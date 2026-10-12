@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
+import 'package:go_router/go_router.dart';
 
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../services/app_theme.dart';
+import '../utils/server_address.dart';
+import '../widgets/network_log_dialog.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -79,19 +82,15 @@ class _SettingsPageState extends State<SettingsPage> {
       context,
     ).showSnackBar(const SnackBar(content: Text('设置已保存')));
 
-    Navigator.pop(context);
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/');
+    }
   }
 
   String _normalizeServerUrl(String input) {
-    var url = input.trim();
-    if (url.isEmpty) return 'http://localhost:3000';
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      url = 'http://$url';
-    }
-    while (url.endsWith('/')) {
-      url = url.substring(0, url.length - 1);
-    }
-    return url;
+    return normalizeServerAddress(input);
   }
 
   void _showServerUrlDialog() {
@@ -116,10 +115,16 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           TextButton(
             onPressed: () {
-              final url = _normalizeServerUrl(controller.text);
-              _apiService.setServerUrl(url);
-              setState(() => _serverBaseUrl = url);
-              Navigator.pop(context);
+              try {
+                final url = _normalizeServerUrl(controller.text);
+                _apiService.setServerUrl(url);
+                setState(() => _serverBaseUrl = url);
+                Navigator.pop(context);
+              } on FormatException catch (e) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text(e.message)));
+              }
             },
             child: const Text('确定'),
           ),
@@ -179,6 +184,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   void _restoreDefaults() async {
     await _storage.clear();
+    restoreAppTheme();
+    appThemeRevision.value++;
     if (mounted) {
       setState(() {
         _imgSize = _storage.imgSize;
@@ -380,11 +387,17 @@ class _SettingsPageState extends State<SettingsPage> {
                 title: '系统操作',
                 children: [
                   ListTile(
-                    title: const Text('恢复默认'),
+                    title: const Text('重置显示设置'),
+                    subtitle: const Text('保留连接地址和传输记录'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _restoreDefaults,
                   ),
                   _buildRestartTile(),
+                  ListTile(
+                    title: const Text('网络诊断日志'),
+                    leading: const Icon(Icons.bug_report_outlined),
+                    onTap: () => NetworkLogDialog.show(context),
+                  ),
                 ],
               ),
             ],

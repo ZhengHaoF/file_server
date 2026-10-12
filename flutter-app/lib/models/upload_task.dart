@@ -1,18 +1,13 @@
 import 'dart:convert';
 
-enum AppUploadStatus {
-  enqueued,
-  uploading,
-  completed,
-  failed,
-  canceled,
-}
+enum AppUploadStatus { enqueued, uploading, completed, failed, canceled }
 
 class AppUploadTask {
   String id;
   String fileName;
   final String destPath;
   final String localPath;
+  final String serverUrl;
   double progress;
   AppUploadStatus status;
   String? errorMsg;
@@ -25,6 +20,7 @@ class AppUploadTask {
     required this.fileName,
     required this.destPath,
     required this.localPath,
+    this.serverUrl = '',
     this.progress = 0.0,
     this.status = AppUploadStatus.enqueued,
     this.errorMsg,
@@ -34,17 +30,18 @@ class AppUploadTask {
   }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'fileName': fileName,
-        'destPath': destPath,
-        'localPath': localPath,
-        'progress': progress,
-        'status': status.index,
-        'errorMsg': errorMsg,
-        'fileSize': fileSize,
-        'createdAt': createdAt.toIso8601String(),
-        'completedAt': completedAt?.toIso8601String(),
-      };
+    'id': id,
+    'fileName': fileName,
+    'destPath': destPath,
+    'localPath': localPath,
+    'serverUrl': serverUrl,
+    'progress': progress,
+    'status': status.index,
+    'errorMsg': errorMsg,
+    'fileSize': fileSize,
+    'createdAt': createdAt.toIso8601String(),
+    'completedAt': completedAt?.toIso8601String(),
+  };
 
   factory AppUploadTask.fromJson(Map<String, dynamic> json) {
     return AppUploadTask(
@@ -52,6 +49,7 @@ class AppUploadTask {
       fileName: json['fileName'] ?? '',
       destPath: json['destPath'] ?? '',
       localPath: json['localPath'] ?? '',
+      serverUrl: json['serverUrl'] ?? '',
       progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
       status: AppUploadStatus.values[json['status'] ?? 0],
       errorMsg: json['errorMsg'] as String?,

@@ -3,13 +3,19 @@
   "private": true,
   "description": "简易文件服务器 monorepo - 针对大量查看NAS图片的需求开发",
   "scripts": {
-    "dev:server": "cd server && npm start",
+    "dev:server": "cargo run --manifest-path server-rust/Cargo.toml",
+    "dev:legacy": "cd server && npm start",
     "dev:web": "cd web && npm run dev",
     "dev:admin": "cd admin && npm run dev",
     "build:web": "cd web && npm run build",
     "build:admin": "cd admin && npm run build",
     "assemble": "node assemble.js",
-    "pack": "node pack.js",
+    "pack": "node scripts/pack-rust.cjs",
+    "build:server": "cargo build --release --locked --manifest-path server-rust/Cargo.toml",
+    "check:rust": "cargo fmt --manifest-path server-rust/Cargo.toml -- --check && cargo clippy --locked --manifest-path server-rust/Cargo.toml --all-targets -- -D warnings && cargo test --locked --manifest-path server-rust/Cargo.toml",
+    "test:distribution": "node --test scripts/pack-rust.test.cjs",
+    "test:rust:smoke": "node scripts/rust-smoke.mjs",
+    "test:rust:security": "node scripts/rust-security-smoke.mjs",
     "build:all": "npm run assemble"
   }
 }

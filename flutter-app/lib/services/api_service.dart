@@ -3,6 +3,7 @@ import '../models/file_info.dart';
 import 'network_log_service.dart';
 import 'storage_service.dart';
 import '../utils/server_address.dart';
+import '../utils/file_urls.dart';
 
 class ApiService {
   static final ApiService _instance = ApiService._internal();
@@ -41,11 +42,14 @@ class ApiService {
 
   String get serverBaseUrl => _serverBaseUrl;
 
+  /// Separate cookie-authenticated management UI. Never include a session or ticket.
+  Uri get adminUri => Uri.parse('$_serverBaseUrl/admin/');
+
   Future<void> verifyConnection() async {
     final server = _serverBaseUrl;
     final response = await _dio.get(
-      '$server/list/${Uri.encodeComponent(r'$')}',
-      queryParameters: {'sta': 0, 'end': 1},
+      '$server/api/v2/files',
+      queryParameters: {'path': '', 'sta': 0, 'end': 1},
     );
     if (server != _serverBaseUrl) throw StateError('服务器已切换');
     _checkResponse(response);
@@ -93,30 +97,21 @@ class ApiService {
     _ticketExpiresAt = (response.data['ticketExpiresAt'] as num).toInt();
   }
 
-  String _withTicket(String url) {
-    if (_readTicket == null) return url;
-    return Uri.parse(
-      url,
-    ).replace(queryParameters: {'ticket': _readTicket!}).toString();
-  }
-
   static String imagePreviewUrl(String url, int size) {
-    final uri = Uri.parse(url);
-    final bounded = size.clamp(1, 4000);
-    return uri.replace(path: '${uri.path}!${bounded}x$bounded').toString();
+    return imagePreviewUri(Uri.parse(url), size).toString();
   }
 
   String getFileUrl(String filePath, String fileName) {
-    final encoded = [
-      ...filePath.split('/').where((s) => s.isNotEmpty),
-      fileName,
-    ].map(Uri.encodeComponent).join('/');
-    return _withTicket('$_serverBaseUrl/getFile/$encoded');
+    final path = filePath.isEmpty ? fileName : '$filePath/$fileName';
+    return contentUri(_serverBaseUrl, path, readTicket: _readTicket).toString();
   }
 
   String getVideoPreviewUrl(String filePath) {
-    final encoded = filePath.split('/').map(Uri.encodeComponent).join('/');
-    return _withTicket('$_serverBaseUrl/getVideoPreview/$encoded');
+    return videoPreviewUri(
+      _serverBaseUrl,
+      filePath,
+      readTicket: _readTicket,
+    ).toString();
   }
 
   /// 统一检查响应状态码，非 2xx 时从 response body 提取 msg 抛出异常
@@ -146,8 +141,12 @@ class ApiService {
       var start = 0;
       while (true) {
         final response = await _dio.get(
-          '$server/list/${Uri.encodeComponent(currentPath.isEmpty ? r'$' : currentPath)}',
-          queryParameters: {'sta': start, 'end': start + 500},
+          '$server/api/v2/files',
+          queryParameters: {
+            'path': currentPath,
+            'sta': start,
+            'end': start + 500,
+          },
           cancelToken: cancelToken,
         );
         if (server != _serverBaseUrl) throw StateError('服务器已切换');
@@ -219,16 +218,6 @@ class ApiService {
       }
       throw Exception(msg);
     }
-  }
-
-  Future<Map<String, dynamic>> restartServer(String pwd) async {
-    final response = await _dio.post(
-      '$_serverBaseUrl/restartServer',
-      data: {'pwd': pwd},
-    );
-
-    _checkResponse(response);
-    return response.data as Map<String, dynamic>;
   }
 }
 

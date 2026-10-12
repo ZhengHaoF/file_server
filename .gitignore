@@ -83,3 +83,14 @@ flutter-app/.metadata
 # ==============================
 
 .workbuddy/
+
+# Rust service build and private runtime state
+server-rust/target/
+server-rust/static/
+server-rust/data/
+server-rust/cache/
+server-rust/files/
+server-rust/*.local.json
+file-serve-rust-*.tar.gz
+file-serve-rust-*.zip
+qa-artifacts/

@@ -18,6 +18,8 @@ const { default: OverviewView } = await import('../views/OverviewView.vue')
 const { default: ConfigView } = await import('../views/ConfigView.vue')
 const { default: LogsView } = await import('../views/LogsView.vue')
 const { default: CacheView } = await import('../views/CacheView.vue')
+const { default: SessionsView } = await import('../views/SessionsView.vue')
+const { default: OperationsView } = await import('../views/OperationsView.vue')
 
 const Blank = defineComponent({ render: () => h('div', 'other') })
 
@@ -42,7 +44,7 @@ const STATUS = {
 }
 
 beforeEach(() => { vi.clearAllMocks(); document.body.innerHTML = ''; if (confirmState.open) settleConfirm(false) })
-afterEach(() => { document.body.innerHTML = '' })
+afterEach(() => { document.body.innerHTML = ''; vi.unstubAllGlobals() })
 
 describe('ConfirmHost', () => {
   it('opens, focuses cancel for danger, Escape cancels, confirm resolves true', async () => {
@@ -77,6 +79,33 @@ describe('ConfirmHost', () => {
 })
 
 describe('OverviewView', () => {
+  it('displays Rust version, unavailable heap metrics and a disabled restart action', async () => {
+    api.getStatus.mockResolvedValue({
+      ...STATUS, process: { rss: 100 * 1024 * 1024, heapUsed: null, heapTotal: null },
+      server: { ...STATUS.server, runtime: 'rust', version: '0.1.0', restartReason: '由外部服务管理器重启' },
+      capabilities: { imagePreview: false, videoPreview: true }
+    })
+    const { wrapper } = await mountWithRouter(OverviewView)
+    expect(wrapper.find('[data-testid="text-runtime"]').text()).toBe('Rust')
+    expect(wrapper.find('[data-testid="text-runtime-version"]').text()).toBe('0.1.0')
+    expect(wrapper.find('[data-testid="kpi-process"]').text()).toContain('未提供堆内存统计')
+    expect(wrapper.find('[data-testid="button-restart"]').element.disabled).toBe(true)
+    expect(wrapper.find('[data-testid="text-restart-unsupported"]').text()).toContain('外部服务管理器')
+    expect(wrapper.find('[data-testid="capability-imagePreview"]').text()).toBe('图片预览：不可用')
+    expect(wrapper.find('[data-testid="capability-videoPreview"]').text()).toBe('视频截图：可用')
+    await wrapper.find('[data-testid="button-restart"]').trigger('click')
+    expect(api.restartServer).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('falls back to old Node status and never enables unknown restart support', async () => {
+    api.getStatus.mockResolvedValue({ ...STATUS, server: { nodeVersion: 'v22' } })
+    const { wrapper } = await mountWithRouter(OverviewView)
+    expect(wrapper.find('[data-testid="text-runtime"]').text()).toBe('Node.js')
+    expect(wrapper.find('[data-testid="text-runtime-version"]').text()).toBe('v22')
+    expect(wrapper.find('[data-testid="button-restart"]').element.disabled).toBe(true)
+    expect(wrapper.find('[data-testid="text-restart-unsupported"]').text()).toContain('未报告')
+    wrapper.unmount()
+  })
   it('distinguishes disabled HTTPS from stopped and shows warming CPU, not 0', async () => {
     api.getStatus.mockResolvedValue(STATUS)
     const { wrapper } = await mountWithRouter(OverviewView)
@@ -128,6 +157,67 @@ const CONFIG = {
 }
 
 describe('ConfigView', () => {
+  it('handles Rust string revisions, new timeout fields and integer descriptors', async () => {
+    api.getConfig.mockResolvedValue({
+      ...CONFIG, revision: 'sha256-revision',
+      values: { ...CONFIG.values, uploadTimeoutSeconds: 1800 },
+      fields: [...CONFIG.fields, { key: 'uploadTimeoutSeconds', label: '上传总期限', type: 'number', group: 'access', integer: true, min: 1, max: 86400 }]
+    })
+    const { wrapper } = await mountWithRouter(ConfigView)
+    const timeout = wrapper.find('[data-testid="input-uploadTimeoutSeconds"]')
+    expect(timeout.attributes('step')).toBe('1')
+    expect(wrapper.find('[data-testid="input-uploadMaxSizeMB"]').attributes('step')).toBe('any')
+    await timeout.setValue('3.5')
+    await wrapper.find('[data-testid="button-validate"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="error-uploadTimeoutSeconds"]').text()).toContain('整数')
+    expect(api.validateConfig).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('submits the exact values and revision that were validated and confirmed', async () => {
+    api.getConfig.mockResolvedValue(CONFIG)
+    api.validateConfig.mockResolvedValue({ valid: true, changes: [{ key: 'host', before: '127.0.0.1', after: '0.0.0.0', restartRequired: true }], warnings: [] })
+    api.saveConfig.mockResolvedValue({ config: { ...CONFIG, revision: 4, values: { ...CONFIG.values, host: '0.0.0.0' } } })
+    const { wrapper } = await mountWithRouter(ConfigView)
+    await wrapper.find('[data-testid="input-host"]').setValue('0.0.0.0')
+    await wrapper.find('[data-testid="form-config"]').trigger('submit')
+    await flushPromises()
+    const validated = api.validateConfig.mock.calls[0][0]
+    // Changing form state while confirmation is pending must not bypass validation.
+    await wrapper.find('[data-testid="input-host"]').setValue('different.local')
+    document.querySelector('[data-testid="button-confirm-ok"]').click()
+    await flushPromises()
+    expect(api.saveConfig).toHaveBeenCalledWith(validated)
+    expect(validated.values.host).toBe('0.0.0.0')
+    wrapper.unmount()
+  })
+  it('does not claim a successful validation when the service fails to confirm validity', async () => {
+    api.getConfig.mockResolvedValue(CONFIG)
+    api.validateConfig.mockResolvedValue({ valid: false, changes: [] })
+    const { wrapper } = await mountWithRouter(ConfigView)
+    await wrapper.find('[data-testid="input-host"]').setValue('0.0.0.0')
+    await wrapper.find('[data-testid="form-config"]').trigger('submit')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="alert-config-outcome"]').text()).toContain('未确认配置有效')
+    expect(api.saveConfig).not.toHaveBeenCalled()
+    expect(confirmState.open).toBe(false)
+    wrapper.unmount()
+  })
+  it('keeps the draft and conflict warning when reloading a conflicting revision fails', async () => {
+    api.getConfig.mockResolvedValueOnce(CONFIG).mockRejectedValueOnce(new ApiError('down', { kind: 'network' }))
+    api.validateConfig.mockRejectedValue(new ApiError('conflict', { kind: 'http', status: 409 }))
+    const { wrapper } = await mountWithRouter(ConfigView)
+    await wrapper.find('[data-testid="input-host"]').setValue('0.0.0.0')
+    await wrapper.find('[data-testid="button-validate"]').trigger('click')
+    await flushPromises()
+    await wrapper.find('[data-testid="button-reload-conflict"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="input-host"]').element.value).toBe('0.0.0.0')
+    expect(wrapper.find('[data-testid="alert-config-conflict"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="alert-config-outcome"]').text()).toContain('重新加载失败')
+    expect(wrapper.find('[data-testid="button-save"]').element.disabled).toBe(true)
+    wrapper.unmount()
+  })
   it('tracks dirty state, validates, confirms the diff and saves', async () => {
     api.getConfig.mockResolvedValue(CONFIG)
     api.validateConfig.mockResolvedValue({ valid: true, changes: [{ key: 'uploadMaxSizeMB', before: 100, after: 200, restartRequired: false }], warnings: [] })
@@ -189,6 +279,21 @@ describe('ConfigView', () => {
 })
 
 describe('LogsView', () => {
+  it('does not display previously buffered entries after changing the source filter', async () => {
+    vi.stubGlobal('WebSocket', class { close() {} })
+    api.getLogs.mockResolvedValue({ logs: [], nextCursor: null })
+    const { wrapper } = await mountWithRouter(LogsView)
+    const vm = wrapper.findComponent(LogsView).vm
+    await wrapper.find('[data-testid="toggle-live"] input').setValue(true)
+    await wrapper.find('[data-testid="button-pause-live"]').trigger('click')
+    vm.ingest([{ id: 'app-1', timestamp: '2026-10-11T09:00:00Z', level: 'info', message: 'application-buffer' }])
+    await wrapper.find('[data-testid="select-source"]').setValue('supervisor')
+    await flushPromises()
+    vm.ingest([{ id: 'app-2', timestamp: '2026-10-11T09:00:00Z', level: 'info', message: 'application-new' }])
+    await wrapper.find('[data-testid="button-pause-live"]').trigger('click')
+    expect(wrapper.findAll('[data-testid="log-row"]')).toHaveLength(0)
+    wrapper.unmount()
+  })
   it('only shows results of the latest filter even if older requests resolve later', async () => {
     const pending = []
     api.getLogs.mockImplementation((q, { signal }) => { const d = deferred(); pending.push({ q, d, signal }); return d.promise })
@@ -233,6 +338,16 @@ describe('LogsView', () => {
 })
 
 describe('CacheView', () => {
+  it('does not invent policy settings when the service omits them', async () => {
+    api.getCacheStats.mockResolvedValue({ totalSize: null, totalFiles: null })
+    api.listJobs.mockResolvedValue({ jobs: [] })
+    const { wrapper } = await mountWithRouter(CacheView)
+    expect(wrapper.text()).toContain('未知')
+    expect(wrapper.text()).not.toContain('已关闭')
+    expect(wrapper.text()).not.toContain('不限制')
+    expect(wrapper.find('[data-testid="text-cache-size"]').text()).toBe('—')
+    wrapper.unmount()
+  })
   it('requires typed confirmation for clear-all and reports 409 inline', async () => {
     api.getCacheStats.mockResolvedValue({ sampledAt: 't', totalFiles: 3, totalSize: 300, imageCache: { count: 1, size: 100 }, videoCache: { count: 1, size: 100 }, legacyCache: { count: 1, size: 100 }, dbSize: 1, database: { main: 1, wal: 2, shm: 3, total: 6, recordCount: 2 }, policy: { cacheMaxSizeMB: 1, cacheRetentionDays: 30, autoCleanupEnabled: true }, maintenance: null, lastCleanupAt: null })
     api.listJobs.mockResolvedValue({ jobs: [], nextBefore: null })
@@ -250,6 +365,31 @@ describe('CacheView', () => {
     await flushPromises()
     expect(api.startCacheJob).toHaveBeenCalledWith({ mode: 'all' })
     expect(wrapper.find('[data-testid="alert-clean-error"]').text()).toContain('已有一个缓存维护任务')
+    wrapper.unmount()
+  })
+})
+
+describe('Rust-compatible management records', () => {
+  it('renders sessions with public management IDs and confirms revocation', async () => {
+    api.listSessions.mockResolvedValue({ sessions: [{ id: 'public-id', role: 'access', current: false, createdAt: 1700000000000, lastSeenAt: 1700000000001, expiresAt: 1800000000000, ip: '127.0.0.1' }] })
+    api.revokeSession.mockResolvedValue({ current: false, msg: 'ok' })
+    const { wrapper } = await mountWithRouter(SessionsView)
+    expect(wrapper.find('[data-testid="row-session-public-id"]').text()).toContain('文件访问')
+    await wrapper.find('[data-testid="button-revoke-public-id"]').trigger('click')
+    await flushPromises()
+    expect(api.revokeSession).not.toHaveBeenCalled()
+    document.querySelector('[data-testid="button-confirm-ok"]').click()
+    await flushPromises()
+    expect(api.revokeSession).toHaveBeenCalledWith('public-id')
+    expect(wrapper.find('[data-testid="alert-session-outcome"]').text()).toContain('已撤销')
+    wrapper.unmount()
+  })
+  it('shows an explicit unsupported capability error, not an empty successful record list', async () => {
+    api.listJobs.mockRejectedValue(new ApiError('持久化任务不可用', { kind: 'http', status: 501 }))
+    api.listAudit.mockResolvedValue({ entries: [], nextBefore: null })
+    const { wrapper } = await mountWithRouter(OperationsView)
+    expect(wrapper.find('[data-testid="alert-jobs-error"]').text()).toContain('能力不可用')
+    expect(wrapper.text()).not.toContain('还没有维护任务')
     wrapper.unmount()
   })
 })

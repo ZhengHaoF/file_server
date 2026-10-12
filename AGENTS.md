@@ -1,5 +1,15 @@
 # File Serve 开发约定
 
+## Rust 迁移后的优先约定
+
+- 默认服务端为 `server-rust/`，二进制 `file-server`；独立托管 Web 与 `/admin/`，不引入 Tauri。
+- 用户允许改革不合理协议/交互/架构并放弃旧兼容，但必须同时调整受影响客户端、契约与回归测试。下文关于 Express/旧接口保持的约定仅适用于保留的 `server/` 回退实现，不限制 Rust 架构。
+- Rust 契约见 `shared/RUST_API.md`，迁移见 `docs/RUST_MIGRATION.md`。保留安全约束：认证角色分离、路径边界、拒绝隐藏路径/软链接、不覆盖发布、受限媒体任务、缓存原子发布、私有数据与静态/共享目录隔离。
+- `npm run assemble` 构建并同步 Rust 静态资源，不覆盖历史 Node 资源；`npm run pack` 默认 Rust，旧 `pack.js` 仅保留原分发的测试对照。v2 客户端不承诺支持旧 Node，回退必须使用迁移前的完整版本。运行时数据绝不打包。
+- Rust 必须执行 `npm run check:rust`；真实进程黑盒验收为 `cargo build --locked --manifest-path server-rust/Cargo.toml && npm run test:rust:smoke && npm run test:rust:security`，仅用临时目录。`npm run test:distribution` 检查打包隔离。
+- 服务停止后 Web 管理端也停止。只有存在实际监督者才声明 `FILE_SERVER_MANAGED=1`；受管重启退出码 75，恢复由系统/容器/显式 supervisor 完成，不能只返回成功 JSON。
+- Windows/ARM NAS/移动客户端平台验证与本地 Linux 验证分开记录；不能根据 CI 文件存在就声称远端检查通过。
+
 ## 项目结构
 
 - `server/index.js`：配置、HTTP/HTTPS、优雅退出和日志流启动。

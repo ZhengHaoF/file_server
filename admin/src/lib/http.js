@@ -60,7 +60,7 @@ function buildQuery(query) {
 const STATUS_TEXT = {
   400: '请求参数无效', 401: '会话已失效，请重新登录', 403: '没有管理权限', 404: '接口不存在',
   409: '操作冲突', 413: '请求过大', 429: '请求过于频繁，请稍后再试', 500: '服务器内部错误',
-  502: '网关错误', 503: '服务暂不可用', 504: '网关超时'
+  501: '当前服务不支持此功能', 502: '网关错误', 503: '服务暂不可用', 504: '网关超时'
 }
 
 /**
@@ -81,6 +81,7 @@ export async function request(method, path, options = {}) {
     else signal.addEventListener('abort', relay, { once: true })
   }
   const headers = { Accept: responseType === 'blob' ? '*/*' : 'application/json' }
+  const requestBearer = bearer
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (bearer) headers.Authorization = `Bearer ${bearer}`
 
@@ -119,7 +120,8 @@ export async function request(method, path, options = {}) {
       const message = (data && (data.msg || data.message)) || STATUS_TEXT[status] || `请求失败（HTTP ${status}）`
       const kind = status === 401 ? 'auth' : status === 403 ? 'forbidden' : 'http'
       const error = new ApiError(message, { kind, status, data })
-      if (kind === 'auth' && !skipAuthHandler && unauthorizedHandler) unauthorizedHandler(error)
+      // A late rejection for an old session must not revoke a newer login.
+      if (kind === 'auth' && !skipAuthHandler && unauthorizedHandler && requestBearer === bearer) unauthorizedHandler(error)
       throw error
     }
 
@@ -170,7 +172,9 @@ export function describeError(error) {
   if (error instanceof ApiError) {
     if (error.kind === 'network') return '无法连接服务器，请检查服务是否运行或网络是否可达'
     if (error.kind === 'timeout') return '请求超时，服务器响应过慢'
-    if (error.status) return `${error.message}（HTTP ${error.status}）`
+    const requestId = typeof error.data?.requestId === 'string' ? `；请求标识：${error.data.requestId}` : ''
+    if (error.status === 501) return `${error.message}（当前服务能力不可用，HTTP 501）${requestId}`
+    if (error.status) return `${error.message}（HTTP ${error.status}）${requestId}`
     return error.message
   }
   return error.message || String(error)

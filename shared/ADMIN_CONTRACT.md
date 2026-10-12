@@ -1,5 +1,7 @@
 # Admin rewrite contract
 
+Rust migration: `server-rust/` is the default backend. The Vue client retains this valid response model where practical, but runtime reporting must prefer `server.runtime` and `server.version`, and unavailable Node heap values are `null`. Rust-specific behavior and intentional differences are documented in `RUST_API.md`; this document's original Express-only/strict-compatibility implementation assignments below are historical, not a prohibition on authorized reform.
+
 This is the implementation contract for the rewritten Vue 3 admin and Express services. Keep legacy file APIs and the Web/Flutter file clients unchanged. All admin calls use HttpOnly cookies in production; optionally attach the temporary Bearer session returned at login in memory. Never persist tokens in browser storage or put credentials in URLs.
 
 ## Auth

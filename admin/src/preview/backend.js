@@ -143,8 +143,8 @@ function statusPayload() {
     cpu: { usage: last.cpu, cores: 4, warmingUp: false },
     memory: { total, free: total - used, used, usage: last.memory, scope: 'host' },
     disk: { total: 3726, used: 2981, free: 745, usage: 80.0, available: true, scope: 'shared-filesystem' },
-    process: { rss: last.processRss, heapUsed: 62 * MB, heapTotal: 88 * MB },
-    server: { uptime: (Date.now() - db.bootAt) / 1000, nodeVersion: 'v22.18.0', httpPort: db.values.port, httpsPort: db.values.httpsPort, httpStatus: 'running', httpsStatus: db.values.httpsEnabled ? 'running' : 'disabled', restartSupported: true, deployment: 'supervisor' },
+    process: { rss: last.processRss, heapUsed: null, heapTotal: null },
+    server: { uptime: (Date.now() - db.bootAt) / 1000, runtime: 'Rust', version: '0.2.0', httpPort: db.values.port, httpsPort: db.values.httpsPort, httpStatus: 'running', httpsStatus: db.values.httpsEnabled ? 'running' : 'disabled', restartSupported: true, deployment: 'supervisor' },
     queues: { image: { active: Math.round(rand(0, 2)), pending: Math.round(rand(0, 6)), limit: 2 }, video: { active: 0, pending: 0, limit: 1 }, upload: { active: Math.round(rand(0, 1)), pending: 0, limit: 4 }, maintenance: running ? { active: true, status: '清理中' } : { active: false, status: 'idle' } },
     history: db.history.slice(),
     alerts: [{ level: 'warning', message: '共享目录所在磁盘已使用 80%，可用空间 745 GB。' }]

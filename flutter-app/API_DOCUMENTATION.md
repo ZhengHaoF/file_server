@@ -1,5 +1,28 @@
 # File Serve API 文档
 
+## 当前 Flutter 客户端：v2 读取协议
+
+当前客户端仅使用以下 v2 读取接口，不自动回退旧 Node 路径。路径是相对共享根目录的原字符串，由 query encoder 编码一次；不要先调用 `Uri.encodeComponent` 再写入 `queryParameters`。
+
+| 操作 | 接口 | 参数 |
+|---|---|---|
+| 目录列表 | `GET /api/v2/files` | `path`（根目录为空字符串）、`sta`、`end` |
+| 原文件、播放、下载 | `GET /api/v2/content` | `path` |
+| 图片缩略图 | `GET /api/v2/preview` | `path`、`kind=image`、`width`、`height` |
+| 视频截图 | `GET /api/v2/preview` | `path`、`kind=video`；尺寸可省略 |
+
+`$`、`$$` 是字面目录名，只有空 `path` 表示根目录。原文件 `foo.jpg!320x240` 不再隐式触发预览。`list` / `nextStart` 等列表 DTO、登录会话 Bearer、HttpOnly cookie 与只读 `ticket` 认证保持不变；删除、改名、上传写接口仍保持现有路径。Flutter 的统一读取 URL helper 在 `lib/utils/file_urls.dart`，`FileInfo` 和 `ApiService` 共用它。
+
+重启、配置与日志管理通过 `/admin/` 浏览器入口，不再直接提交旧密码式 `/restartServer`。旧 Node 服务需配套旧版客户端。
+
+会话 Bearer / readTicket 仅保存在内存。原生下载任务保存不带凭据的内容 URL，恢复旧任务时清除票据参数，重试使用当前同源 Bearer；失败记录不保存响应正文或凭据。缩略图使用内存加载，不再通过磁盘图片缓存保存含票据的 URL 元数据。旧版本已经产生的图片磁盘缓存不由本次改动自动迁移，升级前可清除应用缓存。
+
+---
+
+## 历史 Node 接口文档（不适用于当前客户端）
+
+下方保留历史说明供旧 release 对照；其中旧 `$` 路径替换、`!WxH` 后缀与密码重启接口不能用于新版 Rust / Flutter 客户端。
+
 ## 基础信息
 
 - **HTTP 服务端口**: 3000

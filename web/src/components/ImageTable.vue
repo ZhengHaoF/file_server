@@ -51,7 +51,7 @@ import {determineFileType} from "@/tools/tools";
 import {Grid, GridItem, Image} from 'vant';
 import {useLongPress} from '@/composables/useLongPress';
 import FileIcon from './FileIcon.vue';
-import {previewUrl, withTicket} from '@/tools/fileApi';
+import {previewUrl, videoPreviewUrl} from '@/tools/fileApi';
 import {useElementSize} from '@vueuse/core';
 import {RecycleScroller} from 'vue-virtual-scroller';
 import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
@@ -102,7 +102,7 @@ const props = defineProps({
 
 const getVideoPreviewUrl = (data) => {
   if (!props.serverBaseUrl || !data.path) return '';
-  return withTicket(`${props.serverBaseUrl}/getVideoPreview/${data.path.split('/').filter(Boolean).map(encodeURIComponent).join('/')}`, props.serverBaseUrl);
+  return videoPreviewUrl(props.serverBaseUrl, data.path);
 }
 
 const getImageSrc = (data) => {

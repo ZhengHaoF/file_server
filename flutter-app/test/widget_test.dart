@@ -92,7 +92,8 @@ void main() {
       expect(info.isFile, true);
       expect(info.isDirectory, false);
       expect(info.path, 'videos/test.mp4');
-      expect(info.url, 'http://localhost:3000/getFile/videos/test.mp4');
+      expect(Uri.parse(info.url!).path, '/api/v2/content');
+      expect(Uri.parse(info.url!).queryParameters['path'], 'videos/test.mp4');
     });
 
     test('正确解析文件夹信息', () {
@@ -122,7 +123,11 @@ void main() {
         'isDirectory': true,
       };
 
-      final info = FileInfo.fromJson(json, 'parentDir', 'http://localhost:3000');
+      final info = FileInfo.fromJson(
+        json,
+        'parentDir',
+        'http://localhost:3000',
+      );
 
       expect(info.path, 'parentDir/subFolder');
       expect(info.url, isNull);
@@ -140,7 +145,7 @@ void main() {
       final info = FileInfo.fromJson(json, '', 'http://localhost:3000');
 
       expect(info.path, 'readme.txt');
-      expect(info.url, 'http://localhost:3000/getFile/readme.txt');
+      expect(info.url, 'http://localhost:3000/api/v2/content?path=readme.txt');
     });
   });
 }

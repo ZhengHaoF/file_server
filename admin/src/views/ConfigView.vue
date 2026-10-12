@@ -101,6 +101,7 @@ function localValidate() {
     const v = fromForm(f, draft.value[f.key])
     if (f.type === 'number') {
       if (v === null || !Number.isFinite(v)) errs[f.key] = '请输入数字'
+      else if (f.integer === true && !Number.isInteger(v)) errs[f.key] = '请输入整数'
       else if (f.min !== undefined && v < f.min) errs[f.key] = `不能小于 ${f.min}`
       else if (f.max !== undefined && v > f.max) errs[f.key] = `不能大于 ${f.max}`
     }
@@ -129,12 +130,16 @@ function handleError(error, title) {
   outcome.value = { tone: 'err', title, text: describeError(error) }
 }
 
-async function runValidate() {
+async function runValidate(payload = { revision: cfg.value.revision, values: payloadValues() }) {
   outcome.value = null
   if (!localValidate()) { outcome.value = { tone: 'err', title: '校验未通过', text: '请修正标记的字段。' }; return null }
   busy.value = 'validate'
   try {
-    const res = await api.validateConfig({ revision: cfg.value.revision, values: payloadValues() })
+    const res = await api.validateConfig(payload)
+    if (res?.valid !== true || !Array.isArray(res.changes)) {
+      outcome.value = { tone: 'err', title: '校验失败', text: '服务器未确认配置有效，本次修改不会保存。' }
+      return null
+    }
     changes.value = res?.changes || []
     warnings.value = res?.warnings || []
     fieldErrors.value = {}
@@ -155,7 +160,10 @@ async function onValidate() {
 const labelOf = (key) => fieldMap.value[key]?.label || key
 
 async function onSave() {
-  const res = await runValidate()
+  if (busy.value || !cfg.value || config.stale.value || !dirty.value) return
+  // Save exactly the revision and values that the server validated and the user confirmed.
+  const payload = { revision: cfg.value.revision, values: payloadValues() }
+  const res = await runValidate(payload)
   if (!res) return
   if (!res.changes?.length) { outcome.value = { tone: 'info', title: '无需保存', text: '服务器上的配置与当前表单一致。' }; return }
   const needsRestart = res.changes.some((c) => c.restartRequired)
@@ -168,7 +176,7 @@ async function onSave() {
   if (!ok) return
   busy.value = 'save'
   try {
-    const saved = await api.saveConfig({ revision: cfg.value.revision, values: payloadValues() })
+    const saved = await api.saveConfig(payload)
     const list = saved?.changes || res.changes
     if (saved?.config) config.set(saved.config); else await config.load()
     resetDraft()
@@ -188,8 +196,12 @@ async function onDiscard() {
 }
 
 async function onReloadConflict() {
-  conflict.value = false
   await config.load()
+  if (config.error.value) {
+    outcome.value = { tone: 'err', title: '重新加载失败', text: `${describeError(config.error.value)}。未保存的修改仍保留。` }
+    return
+  }
+  conflict.value = false
   resetDraft()
   outcome.value = { tone: 'info', title: '已重新加载', text: '表单已更新为服务器上的最新配置，请重新修改。' }
 }
@@ -276,6 +288,7 @@ const SOURCE = { env: '环境变量', environment: '环境变量', file: '配置
     </div>
 
     <form v-else class="cfg" novalidate data-testid="form-config" @submit.prevent="onSave">
+      <InlineAlert v-if="!fields.length" tone="info" data-testid="alert-config-readonly">当前服务未提供可编辑配置字段，仅显示只读信息。不会提交遮蔽的敏感值。</InlineAlert>
       <section v-for="g in groups" :key="g.id" class="card" :aria-labelledby="`grp-${g.id}`">
         <div class="card-head"><div><h2 :id="`grp-${g.id}`">{{ g.title }}</h2><p v-if="g.desc" class="small muted">{{ g.desc }}</p></div></div>
         <div class="fields">
@@ -299,7 +312,7 @@ const SOURCE = { env: '环境变量', environment: '环境变量', file: '配置
               </label>
               <textarea v-else-if="f.type === 'origins'" :id="`f-${f.key}`" v-model="draft[f.key]" class="textarea" :class="{ invalid: fieldErrors[f.key] }" rows="3" placeholder="每行一个，例如 https://nas.local:3443" :disabled="f.readonly || !!busy" :aria-invalid="!!fieldErrors[f.key]" :aria-describedby="`e-${f.key}`" spellcheck="false" :data-testid="`input-${f.key}`" @input="onField(f.key)" />
               <div v-else class="row nowrap">
-                <input :id="`f-${f.key}`" v-model="draft[f.key]" class="input" :class="{ invalid: fieldErrors[f.key], mono: f.type === 'string', num: f.type === 'number' }" :type="f.type === 'number' ? 'number' : 'text'" :min="f.min" :max="f.max" :inputmode="f.type === 'number' ? 'numeric' : undefined" :disabled="f.readonly || !!busy" :aria-invalid="!!fieldErrors[f.key]" :aria-describedby="`e-${f.key}`" spellcheck="false" autocomplete="off" :data-testid="`input-${f.key}`" @input="onField(f.key)" />
+                <input :id="`f-${f.key}`" v-model="draft[f.key]" class="input" :class="{ invalid: fieldErrors[f.key], mono: f.type === 'string', num: f.type === 'number' }" :type="f.type === 'number' ? 'number' : 'text'" :min="f.min" :max="f.max" :step="f.type === 'number' ? (f.integer === true ? 1 : 'any') : undefined" :inputmode="f.type === 'number' ? (f.integer === true ? 'numeric' : 'decimal') : undefined" :disabled="f.readonly || !!busy" :aria-invalid="!!fieldErrors[f.key]" :aria-describedby="`e-${f.key}`" spellcheck="false" autocomplete="off" :data-testid="`input-${f.key}`" @input="onField(f.key)" />
                 <CopyButton v-if="f.type === 'string' && draft[f.key]" :value="String(draft[f.key])" :label="`复制${f.label || f.key}`" />
               </div>
               <p v-if="f.type === 'number' && (f.min !== undefined || f.max !== undefined)" class="field-help num">范围 {{ f.min ?? '—' }} – {{ f.max ?? '—' }}</p>
@@ -336,8 +349,8 @@ const SOURCE = { env: '环境变量', environment: '环境变量', file: '配置
           <div class="save-actions">
             <span class="small" :class="dirty ? 'dirty' : 'muted'" data-testid="text-dirty">{{ dirty ? `${dirtyKeys.length} 项未保存` : '没有未保存的修改' }}</span>
             <button type="button" class="btn btn-ghost" :disabled="!dirty || !!busy" data-testid="button-discard" @click="onDiscard"><Undo2 aria-hidden="true" />撤销</button>
-            <button type="button" class="btn" :disabled="!dirty || !!busy" data-testid="button-validate" @click="onValidate"><RefreshCw v-if="busy === 'validate'" class="spin" aria-hidden="true" /><ShieldCheck v-else aria-hidden="true" />校验</button>
-            <button type="submit" class="btn btn-primary" :disabled="!dirty || !!busy" data-testid="button-save"><RefreshCw v-if="busy === 'save'" class="spin" aria-hidden="true" /><Save v-else aria-hidden="true" />保存</button>
+            <button type="button" class="btn" :disabled="!dirty || !!busy || config.stale.value" data-testid="button-validate" @click="onValidate"><RefreshCw v-if="busy === 'validate'" class="spin" aria-hidden="true" /><ShieldCheck v-else aria-hidden="true" />校验</button>
+            <button type="submit" class="btn btn-primary" :disabled="!dirty || !!busy || config.stale.value" data-testid="button-save"><RefreshCw v-if="busy === 'save'" class="spin" aria-hidden="true" /><Save v-else aria-hidden="true" />保存</button>
           </div>
         </div>
       </div>

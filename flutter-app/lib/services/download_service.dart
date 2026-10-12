@@ -141,7 +141,8 @@ class DownloadService extends ChangeNotifier {
     int fileSize = 0,
   }) async {
     // 检查是否已在下载列表中
-    final exists = _tasks.any((t) => t.url == url && !t.status.isTerminal);
+    final safeUrl = credentialFreeDownloadUrl(url);
+    final exists = _tasks.any((t) => t.url == safeUrl && !t.status.isTerminal);
     if (exists) return;
 
     // 限制任务数量，清理已完成的旧任务
@@ -214,15 +215,14 @@ class DownloadService extends ChangeNotifier {
 
       task.status = AppDownloadStatus.failed;
       task.errorMsg = '下载失败，请检查连接与授权后重试';
-      debugPrint('下载失败 [${e.type}]: ${e.message}');
+      debugPrint('下载失败 [${e.type}]');
       debugPrint('  状态码: ${e.response?.statusCode}');
-      debugPrint('  响应: ${e.response?.data}');
     } catch (e) {
       if (cancelToken.isCancelled) return;
 
       task.status = AppDownloadStatus.failed;
-      task.errorMsg = '保存失败: $e';
-      debugPrint('下载失败: $e');
+      task.errorMsg = '保存失败，请检查本地存储后重试';
+      debugPrint('保存下载失败 [${e.runtimeType}]');
       debugPrint('  保存路径: ${task.savePath}');
     } finally {
       _cancelTokens.remove(task.id);
@@ -346,6 +346,8 @@ class DownloadService extends ChangeNotifier {
         task.errorMsg = '传输已中断，请重试（不是断点续传）';
       }
     }
+    // Rewrite successfully decoded legacy records without persisted tickets.
+    await _saveTasks();
     notifyListeners();
   }
 

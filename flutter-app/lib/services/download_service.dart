@@ -205,6 +205,7 @@ class DownloadService extends ChangeNotifier {
         }
       }
 
+      if (cancelToken.isCancelled) return;
       task.status = AppDownloadStatus.completed;
       task.progress = 1.0;
       task.completedAt = DateTime.now();
@@ -299,7 +300,6 @@ class DownloadService extends ChangeNotifier {
   /// 移除任务记录，可选删除磁盘文件
   void removeTask(String taskId, {bool deleteFile = false}) {
     _cancelTokens[taskId]?.cancel('移除任务');
-    _cancelTokens.remove(taskId);
 
     if (deleteFile) {
       final index = _tasks.indexWhere((t) => t.id == taskId);

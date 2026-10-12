@@ -16,6 +16,52 @@ class RealHttp extends HttpOverrides {}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'connection probe requests only one item; 503 keeps session, 401 clears it',
+    () async {
+      await HttpOverrides.runWithHttpOverrides(() async {
+        SharedPreferences.setMockInitialValues({});
+        await StorageService().init();
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        var code = 200;
+        var end = '';
+        server.listen((req) async {
+          await req.drain<void>();
+          req.response.headers.contentType = ContentType.json;
+          if (req.uri.path == '/api/auth/login') {
+            req.response.write(
+              jsonEncode({
+                'sessionToken': 'session',
+                'readTicket': 'ticket',
+                'ticketExpiresAt':
+                    DateTime.now().millisecondsSinceEpoch + 3600000,
+              }),
+            );
+          } else {
+            end = req.uri.queryParameters['end'] ?? '';
+            req.response.statusCode = code;
+            req.response.write(
+              jsonEncode({'list': [], 'nextStart': null, 'msg': 'unavailable'}),
+            );
+          }
+          await req.response.close();
+        });
+        final api = ApiService()
+          ..setServerUrl('http://127.0.0.1:${server.port}');
+        await api.login('access');
+        await api.verifyConnection();
+        expect(end, '1');
+        code = 503;
+        await expectLater(api.getFileList(''), throwsException);
+        expect(api.isLoggedIn, true);
+        code = 401;
+        await expectLater(api.getFileList(''), throwsException);
+        expect(api.isLoggedIn, false);
+      }, RealHttp());
+    },
+  );
   test('addresses are normalized; unsafe URLs rejected', () {
     expect(
       normalizeServerAddress(' nas.example.com:3000/ '),

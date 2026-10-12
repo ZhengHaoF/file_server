@@ -26,6 +26,7 @@ class _ServerConnectionSheetState extends State<ServerConnectionSheet> {
   @override
   void dispose() {
     _address.dispose();
+    _token.clear();
     _token.dispose();
     super.dispose();
   }
@@ -42,7 +43,10 @@ class _ServerConnectionSheetState extends State<ServerConnectionSheet> {
         await api.login(_token.text.trim());
       }
       await api.verifyConnection();
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) {
+        _token.clear();
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       if (mounted) {
         setState(

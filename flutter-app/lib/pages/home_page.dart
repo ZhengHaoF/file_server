@@ -987,10 +987,10 @@ class _HomePageState extends State<HomePage> {
       onConnect: () async {
         final previous = _apiService.serverBaseUrl;
         await showServerConnection(context);
-        if (!mounted) return;
+        if (!context.mounted) return;
         if (previous != _apiService.serverBaseUrl) {
-          _currentPath = '';
-          _fileList = [];
+          context.go('/');
+          return;
         }
         _loadFileList();
       },

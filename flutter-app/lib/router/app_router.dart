@@ -8,6 +8,7 @@ import '../pages/video_player_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/download_manager_page.dart';
 import '../widgets/mobile_navigation_shell.dart';
+import '../services/api_service.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
@@ -60,7 +61,7 @@ final GoRouter appRouter = GoRouter(
           pageBuilder: (context, state) {
             return CustomTransitionPage(
               key: state.pageKey,
-              child: const HomePage(),
+              child: HomePage(key: ValueKey(ApiService().serverBaseUrl)),
               transitionsBuilder:
                   (context, animation, secondaryAnimation, child) {
                     return SlideTransition(
@@ -86,7 +87,10 @@ final GoRouter appRouter = GoRouter(
             final path = state.extra as String? ?? '';
             return CustomTransitionPage(
               key: state.pageKey,
-              child: HomePage(path: path),
+              child: HomePage(
+                key: ValueKey('${ApiService().serverBaseUrl}:$path'),
+                path: path,
+              ),
               transitionsBuilder:
                   (context, animation, secondaryAnimation, child) {
                     return SlideTransition(

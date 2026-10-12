@@ -52,6 +52,21 @@ void main() {
   );
   setUp(events.clear);
 
+  testWidgets('back clears selection before invoking root back', (
+    tester,
+  ) async {
+    await tester.pumpWidget(browser());
+    await tester.longPress(find.text('a.txt'));
+    await tester.pump();
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(find.text('已选 1 项'), findsNothing);
+    expect(events, isEmpty);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(events, ['back']);
+  });
+
   testWidgets(
     'tap opens, long press selects, selection download targets files only',
     (tester) async {

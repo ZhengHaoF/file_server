@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/file_info.dart';
 import '../widgets/file_icon.dart';
+import '../utils/file_browser_utils.dart';
 
 /// Touch-specific browser. Selection is path based, never tied to row indices.
 class MobileFileBrowser extends StatefulWidget {
@@ -294,7 +295,7 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
               size: 32,
             ),
       title: Text(file.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-      subtitle: Text(file.isDirectory ? '文件夹' : file.size),
+      subtitle: Text(file.isDirectory ? '文件夹' : formatFileBytes(file.sizeRow)),
       onTap: () => _selected.isNotEmpty ? _toggle(file) : widget.onOpen(file),
       onLongPress: () => _toggle(file),
       trailing: _selected.isNotEmpty

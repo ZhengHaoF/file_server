@@ -3,6 +3,7 @@ import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../services/app_theme.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -72,6 +73,7 @@ class _SettingsPageState extends State<SettingsPage> {
         .substring(2)
         .toUpperCase();
     _storage.themeColor = '#$colorHex';
+    appThemeRevision.value++;
 
     ScaffoldMessenger.of(
       context,
@@ -260,108 +262,134 @@ class _SettingsPageState extends State<SettingsPage> {
       appBar: AppBar(
         title: const Text('设置'),
         actions: [
-          TextButton(
-            onPressed: _saveSettings,
-            child: const Text('保存', style: TextStyle(color: Colors.black)),
-          ),
+          TextButton(onPressed: _saveSettings, child: const Text('保存')),
         ],
       ),
-      body: ListView(
-        children: [
-          _buildSection(
-            title: '服务设置',
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 820),
+          child: ListView(
             children: [
-              ListTile(
-                title: const Text('登录文件服务'),
-                subtitle: Text(_apiService.isLoggedIn ? '已登录' : '输入访问令牌以浏览文件'),
-                trailing: const Icon(Icons.lock_outline),
-                onTap: _showLoginDialog,
+              _buildSection(
+                title: '服务设置',
+                children: [
+                  ListTile(
+                    title: const Text('登录文件服务'),
+                    subtitle: Text(
+                      _apiService.isLoggedIn ? '已登录' : '输入访问令牌以浏览文件',
+                    ),
+                    trailing: const Icon(Icons.lock_outline),
+                    onTap: _showLoginDialog,
+                  ),
+                  ListTile(
+                    title: const Text('服务器地址'),
+                    subtitle: Text(
+                      _serverBaseUrl,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(Icons.edit),
+                    onTap: _showServerUrlDialog,
+                  ),
+                ],
               ),
-              ListTile(
-                title: const Text('服务器地址'),
-                subtitle: Text(
-                  _serverBaseUrl,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                trailing: const Icon(Icons.edit),
-                onTap: _showServerUrlDialog,
+              _buildSection(
+                title: '显示设置',
+                children: [
+                  _buildDropdownTile(
+                    title: '外观',
+                    value: appThemeMode.value.name,
+                    items: const {
+                      'system': '跟随系统',
+                      'light': '浅色',
+                      'dark': '深色',
+                    },
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        appThemeMode.value = ThemeMode.values.firstWhere(
+                          (mode) => mode.name == value,
+                        );
+                        _storage.appearance = value;
+                      });
+                    },
+                  ),
+                  _buildStepperTile(
+                    title: '预览图像素',
+                    value: _imgSize,
+                    min: 50,
+                    max: 5000,
+                    onChanged: (v) => setState(() => _imgSize = v),
+                  ),
+                  _buildStepperTile(
+                    title: '手机图片模式列数（桌面自动调整）',
+                    value: _columns,
+                    min: 2,
+                    max: 6,
+                    onChanged: (v) => setState(() => _columns = v),
+                  ),
+                  _buildColorTile(),
+                  _buildDropdownTile(
+                    title: '视频打开方式',
+                    value: _playMode,
+                    items: const {
+                      'ask': '每次询问',
+                      'vlc': 'VLC播放',
+                      'html': '本地播放器',
+                    },
+                    onChanged: (v) => setState(() => _playMode = v!),
+                  ),
+                  _buildDropdownTile(
+                    title: '文件排序方式',
+                    value: _fileSort,
+                    items: const {
+                      'timeStoB': '时间正序',
+                      'timeBtoS': '时间倒序',
+                      'sizeStoB': '大小：从小到大',
+                      'sizeBtoS': '大小：从大到小',
+                      'nameStoB': '名称正序',
+                      'nameBtoS': '名称倒序',
+                    },
+                    onChanged: (v) => setState(() => _fileSort = v!),
+                  ),
+                  _buildDropdownTile(
+                    title: '文件夹位置',
+                    value: _folderSort,
+                    items: const {'start': '最前', 'end': '最后'},
+                    onChanged: (v) => setState(() => _folderSort = v!),
+                  ),
+                  _buildSwitchTile(
+                    title: '图片模式只显示图片',
+                    value: _onlyShowImages,
+                    onChanged: (v) => setState(() => _onlyShowImages = v),
+                  ),
+                  _buildSwitchTile(
+                    title: '是否查看原图',
+                    value: _viewOriginalImage,
+                    onChanged: (v) => setState(() => _viewOriginalImage = v),
+                  ),
+                  _buildSwitchTile(
+                    title: '开启视频缩略图',
+                    value: _videoThumbnail,
+                    onChanged: (v) => setState(() => _videoThumbnail = v),
+                  ),
+                ],
+              ),
+              _buildSection(
+                title: '系统操作',
+                children: [
+                  ListTile(
+                    title: const Text('恢复默认'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: _restoreDefaults,
+                  ),
+                  _buildRestartTile(),
+                ],
               ),
             ],
           ),
-          _buildSection(
-            title: '显示设置',
-            children: [
-              _buildStepperTile(
-                title: '预览图像素',
-                value: _imgSize,
-                min: 50,
-                max: 5000,
-                onChanged: (v) => setState(() => _imgSize = v),
-              ),
-              _buildStepperTile(
-                title: '图片模式列数',
-                value: _columns,
-                min: 2,
-                max: 6,
-                onChanged: (v) => setState(() => _columns = v),
-              ),
-              _buildColorTile(),
-              _buildDropdownTile(
-                title: '视频打开方式',
-                value: _playMode,
-                items: const {'ask': '每次询问', 'vlc': 'VLC播放', 'html': '本地播放器'},
-                onChanged: (v) => setState(() => _playMode = v!),
-              ),
-              _buildDropdownTile(
-                title: '文件排序方式',
-                value: _fileSort,
-                items: const {
-                  'timeStoB': '时间正序',
-                  'timeBtoS': '时间倒序',
-                  'sizeStoB': '大小正序',
-                  'sizeBtoS': '大小倒序',
-                  'nameStoB': '名称正序',
-                  'nameBtoS': '名称倒序',
-                },
-                onChanged: (v) => setState(() => _fileSort = v!),
-              ),
-              _buildDropdownTile(
-                title: '文件夹位置',
-                value: _folderSort,
-                items: const {'start': '最前', 'end': '最后'},
-                onChanged: (v) => setState(() => _folderSort = v!),
-              ),
-              _buildSwitchTile(
-                title: '图片模式只显示图片',
-                value: _onlyShowImages,
-                onChanged: (v) => setState(() => _onlyShowImages = v),
-              ),
-              _buildSwitchTile(
-                title: '是否查看原图',
-                value: _viewOriginalImage,
-                onChanged: (v) => setState(() => _viewOriginalImage = v),
-              ),
-              _buildSwitchTile(
-                title: '开启视频缩略图',
-                value: _videoThumbnail,
-                onChanged: (v) => setState(() => _videoThumbnail = v),
-              ),
-            ],
-          ),
-          _buildSection(
-            title: '系统操作',
-            children: [
-              ListTile(
-                title: const Text('恢复默认'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: _restoreDefaults,
-              ),
-              _buildRestartTile(),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

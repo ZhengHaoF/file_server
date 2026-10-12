@@ -17,6 +17,9 @@ class StorageService {
   String get model => _prefs.getString('model') ?? 'list';
   set model(String value) => _prefs.setString('model', value);
 
+  String get appearance => _prefs.getString('appearance') ?? 'system';
+  set appearance(String value) => _prefs.setString('appearance', value);
+
   int get imgSize => _prefs.getInt('imgSize') ?? 500;
   set imgSize(int value) => _prefs.setInt('imgSize', value);
 
@@ -39,12 +42,14 @@ class StorageService {
   set onlyShowImages(bool value) => _prefs.setBool('onlyShowImages', value);
 
   bool get viewOriginalImage => _prefs.getBool('viewOriginalImage') ?? false;
-  set viewOriginalImage(bool value) => _prefs.setBool('viewOriginalImage', value);
+  set viewOriginalImage(bool value) =>
+      _prefs.setBool('viewOriginalImage', value);
 
   bool get videoThumbnail => _prefs.getBool('videoThumbnail') ?? true;
   set videoThumbnail(bool value) => _prefs.setBool('videoThumbnail', value);
 
-  String get serverBaseUrl => _prefs.getString('serverBaseUrl') ?? 'http://localhost:3000';
+  String get serverBaseUrl =>
+      _prefs.getString('serverBaseUrl') ?? 'http://localhost:3000';
   set serverBaseUrl(String value) => _prefs.setString('serverBaseUrl', value);
 
   Future<void> clear() async {

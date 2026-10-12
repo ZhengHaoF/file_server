@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:z_files/models/file_info.dart';
 import 'package:z_files/services/api_service.dart';
@@ -13,6 +15,45 @@ class _LocalHttpOverrides extends HttpOverrides {}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'cancelled directory request retains Dio cancellation semantics',
+    () async {
+      await HttpOverrides.runWithHttpOverrides(() async {
+        SharedPreferences.setMockInitialValues({});
+        await StorageService().init();
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        final started = Completer<void>();
+        final finish = Completer<void>();
+        server.listen((request) async {
+          started.complete();
+          await finish.future;
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(jsonEncode({'list': [], 'nextStart': null}));
+          await request.response.close();
+        });
+        final api = ApiService()
+          ..setServerUrl('http://127.0.0.1:${server.port}');
+        final cancel = CancelToken();
+        final pending = api.getFileList('', cancelToken: cancel);
+        final expectation = expectLater(
+          pending,
+          throwsA(
+            isA<DioException>().having(
+              (e) => e.type,
+              'type',
+              DioExceptionType.cancel,
+            ),
+          ),
+        );
+        await started.future.timeout(const Duration(seconds: 5));
+        cancel.cancel('directory changed');
+        await expectation;
+        finish.complete();
+      }, _LocalHttpOverrides());
+    },
+  );
 
   test('特殊目录名只编码一次，缩略图参数在只读票据之前', () {
     final file = FileInfo.fromJson(

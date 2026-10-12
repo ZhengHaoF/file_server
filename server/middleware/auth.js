@@ -7,7 +7,7 @@ export function equalToken(provided, expected) {
     return crypto.timingSafeEqual(a, b);
 }
 
-export function createAuth(config, { now = Date.now } = {}) {
+export function createAuth(config, { now = Date.now, onEvent = () => {} } = {}) {
     const sessions = new Map();
     const tickets = new Map();
     const attempts = new Map();
@@ -24,7 +24,10 @@ export function createAuth(config, { now = Date.now } = {}) {
             .find(part => part.startsWith('fs_session='));
         const sessionId = bearer || cookie?.slice('fs_session='.length);
         const session = sessions.get(sessionId);
-        if (session && session.expiresAt > now()) return session;
+        if (session && session.expiresAt > now()) {
+            session.lastSeenAt = now();
+            return session;
+        }
         if (equalToken(req.headers['x-admin-token'], config.restartPwd)) return { role: 'admin' };
         if (equalToken(req.headers['x-file-token'], config.accessToken)) return { role: 'file' };
         return null;
@@ -32,7 +35,9 @@ export function createAuth(config, { now = Date.now } = {}) {
     function readRequired(req, res, next) {
         const session = credentials(req);
         const ticket = typeof req.query.ticket === 'string' ? tickets.get(req.query.ticket) : null;
-        if (config.publicRead || session || (ticket && ticket.expiresAt > now())) return next();
+        const ticketSession = ticket?.sessionToken ? sessions.get(ticket.sessionToken) : null;
+        if (config.publicRead || session || (ticket && ticket.expiresAt > now()
+            && (!ticket.sessionToken || ticketSession?.expiresAt > now()))) return next();
         return res.status(401).json({ msg: '请先登录文件服务', code: 'AUTH_REQUIRED' });
     }
     function adminRequired(req, res, next) {
@@ -64,7 +69,10 @@ export function createAuth(config, { now = Date.now } = {}) {
         prune(tickets);
         const sessionToken = crypto.randomBytes(32).toString('hex');
         const readTicket = crypto.randomBytes(32).toString('hex');
-        sessions.set(sessionToken, { role, expiresAt: now() + sessionMs });
+        const session = { role, expiresAt: now() + sessionMs, createdAt: now(), lastSeenAt: now(),
+            sessionId: crypto.randomBytes(12).toString('hex'), ip: req.ip };
+        sessions.set(sessionToken, session);
+        onEvent('auth.login', session, session.sessionId, 'succeeded');
         tickets.set(readTicket, { sessionToken, expiresAt: now() + ticketMs });
         res.set('Cache-Control', 'no-store');
         res.cookie('fs_session', sessionToken, { httpOnly: true, secure: req.secure || config.secureCookies === true, sameSite: 'strict', maxAge: sessionMs, path: '/' });
@@ -82,13 +90,40 @@ export function createAuth(config, { now = Date.now } = {}) {
         res.set('Cache-Control', 'no-store').json({ readTicket, ticketExpiresAt: now() + ticketMs });
     }
     function logout(req, res) {
-        if (!credentials(req)) return res.status(401).json({ msg: '请先登录文件服务' });
+        const session = credentials(req);
+        if (!session) return res.status(401).json({ msg: '请先登录文件服务' });
         const bearer = (req.headers.authorization || '').replace(/^Bearer /, '');
         const cookie = (req.headers.cookie || '').split(';').map(part => part.trim()).find(part => part.startsWith('fs_session='));
         const id = bearer || cookie?.slice('fs_session='.length);
         sessions.delete(id);
         if (id) for (const [key, ticket] of tickets) if (ticket.sessionToken === id) tickets.delete(key);
+        onEvent('auth.logout', session, session.sessionId || session.role, 'succeeded');
         res.clearCookie('fs_session', { path: '/' }).json({ msg: '已退出' });
     }
-    return { readRequired, adminRequired, writeRequired, credentials, login, logout, renew };
+    function sessionInfo(req, res) {
+        const session = credentials(req);
+        if (!session) return res.status(401).json({ msg: '请重新登录' });
+        res.set('Cache-Control', 'no-store').json({ role: session.role,
+            expiresAt: session.expiresAt || null, sessionId: session.sessionId || null });
+    }
+    function listSessions(req) {
+        prune(sessions);
+        const current = credentials(req)?.sessionId;
+        return [...sessions.values()].map(session => ({
+            id: session.sessionId, role: session.role, createdAt: session.createdAt,
+            lastSeenAt: session.lastSeenAt, expiresAt: session.expiresAt, current: session.sessionId === current, ip: session.ip,
+        })).sort((a, b) => b.createdAt - a.createdAt);
+    }
+    function revokeSession(req, id) {
+        const current = credentials(req);
+        for (const [token, session] of sessions) {
+            if (session.sessionId !== id) continue;
+            sessions.delete(token);
+            for (const [key, ticket] of tickets) if (ticket.sessionToken === token) tickets.delete(key);
+            onEvent('session.revoke', current, id, 'succeeded');
+            return { msg: '会话已撤销', current: current?.sessionId === id };
+        }
+        return null;
+    }
+    return { readRequired, adminRequired, writeRequired, credentials, login, logout, renew, sessionInfo, listSessions, revokeSession };
 }

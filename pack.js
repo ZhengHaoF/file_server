@@ -15,7 +15,7 @@ function buildDistribution(root = __dirname, { archive = true } = {}) {
         'sqllite.js', 'mime.json', '启动.bat', 'package-lock.json']) {
         fs.copyFileSync(path.join(server, name), path.join(dist, name));
     }
-    for (const name of ['utils', 'middleware', 'routes', 'web', 'admin/dist']) {
+    for (const name of ['utils', 'middleware', 'routes', 'services', 'web', 'admin/dist']) {
         fs.cpSync(path.join(server, name), path.join(dist, name), { recursive: true });
     }
     const pkg = JSON.parse(fs.readFileSync(path.join(server, 'package.json'), 'utf8'));
@@ -25,6 +25,7 @@ function buildDistribution(root = __dirname, { archive = true } = {}) {
         rootPath: './files', imgCache: './imgCache', restartPwd: '', accessToken: '',
         publicRead: false, writeEnabled: false, uploadEnabled: false, uploadMaxSizeMB: 4096,
         host: '127.0.0.1', httpsEnabled: false, allowedOrigins: [],
+        cacheMaxSizeMB: 0, cacheRetentionDays: 30, autoCleanupEnabled: false,
     };
     fs.writeFileSync(path.join(dist, 'config.json'), JSON.stringify(template, null, 2));
     fs.mkdirSync(path.join(dist, 'files'));

@@ -46,11 +46,26 @@ node start.js
 
 访问 `http://127.0.0.1:3000`，输入 `auth.local.json` 中的 `accessToken`。管理后台位于 `/admin/`，使用其中的 `restartPwd`。Flutter 在“设置 → 登录文件服务”输入访问令牌，原始令牌不保存在应用偏好设置中。
 
-通过可信内网访问时，可把 `host` 改为 `0.0.0.0`，并配置防火墙与 HTTPS。需要删除、重命名时启用 `writeEnabled`；需要上传时还须同时启用 `uploadEnabled`。修改配置后重启生效。
+通过可信内网访问时，可把 `host` 改为 `0.0.0.0`，并配置防火墙与 HTTPS。需要删除、重命名时启用 `writeEnabled`；需要上传时还须同时启用 `uploadEnabled`。后台保存时会列出差异与风险提示，区分立即生效和需要重启的字段。
+
+## 管理后台
+
+后台提供概览、缓存、日志、配置、任务与审计、会话六个工作区，支持浅色/深色主题和移动端。
+
+- 概览显示真实采样、主机资源与当前 Node 进程内存，HTTPS 未配置显示为“未启用”；网络异常不伪装为零值或自动退出。
+- 缓存区区分图片、视频和历史未分类缓存，显示 SQLite 主文件、WAL 与 SHM；支持按天、全部、容量/保留策略维护。清理只作用于可识别的派生缓存，未知名称和软链接保留；暂停新预览并等待已有任务结束，不删除原文件。
+- 日志支持历史分页、时间/级别/关键词过滤、认证实时流与 CSV/JSON 导出；“清空显示”不会删除服务器日志。
+- 配置保存采用版本校验、字段白名单、差异确认、原子写入和一次备份回滚。管理令牌、访问令牌和私钥不通过后台编辑或导出。
+- 会话使用非凭据 ID，支持撤销其他会话、当前会话与退出登录；撤销同时使关联媒体票据失效。
+- 缓存维护任务和管理操作记录保存在 SQLite，重启前未完成任务标为中断，不假报成功。审计最多保留 5000 条，任务最多保留 100 条；它不是防篡改合规日志。
+
+后台覆盖文件保存在 `dataPath/admin-config.local.json`，备份为 `admin-config.backup.local.json`，按私有文件权限写入。两者均不提交或打包；Docker 中保存在数据卷，而不是写入只读挂载的 `config.local.json`。共享目录、监听地址、端口、直接 HTTPS 变更需要重启；访问开关、上传限制与缓存策略对新请求立即生效。环境变量控制的共享目录在后台只读。
+
+重启按钮只在 `node start.js` 守护运行或受管 Docker 容器中可用。请求被接受不等于恢复成功；后台等待新启动标识或登录接口恢复，并提示重新登录。更改端口/地址后可能需要手动访问新地址，不能保证旧页面自动恢复。
 
 ## 配置项
 
-加载顺序：`config.json` → `config.local.json` → 环境变量覆盖指定字段。提交到仓库的 `config.json` 只提供安全默认值。
+加载顺序：`config.json` → `config.local.json` → `dataPath/admin-config.local.json` → 环境变量覆盖指定字段。提交到仓库的 `config.json` 只提供安全默认值。
 
 | 字段 | 默认值 | 说明 |
 |---|---|---|
@@ -68,6 +83,9 @@ node start.js
 | `certPath` / `keyPath` | `./cert/file.crt` / `./cert/private.pem` | 用户自行提供的证书与私钥 |
 | `allowedOrigins` | `[]` | 单独部署前端或 TLS 代理时允许的明确来源，例如 `https://files.example.com`，不允许通配符 |
 | `secureCookies` | `false` | TLS 反向代理后设为 `true`；直接 HTTPS 自动使用 Secure cookie |
+| `cacheMaxSizeMB` | `0` | 派生缓存容量上限，0 不按容量淘汰 |
+| `cacheRetentionDays` | `30` | 自动维护按最近访问保留天数 |
+| `autoCleanupEnabled` | `false` | 每分钟检查并执行缓存策略 |
 
 环境变量：`FILE_SERVER_ROOT`、`FILE_SERVER_ACCESS_TOKEN`、`FILE_SERVER_ADMIN_TOKEN`、`FILE_SERVER_DATA_DIR`、`FILE_SERVER_CACHE_DIR`。请勿把实际令牌写进公开文档或 URL。
 
@@ -78,6 +96,7 @@ node start.js
 ```bash
 npm --prefix server test
 npm --prefix web test -- --run
+npm --prefix admin test -- --run
 npm run assemble
 npm run pack
 ```
@@ -107,5 +126,6 @@ npm run pack
 - 文件落盘使用同盘硬链接实现不覆盖发布；不支持硬链接的文件系统会失败而不会回退覆盖。目录改名只提供进程内冲突防护。
 - 路径检查不能消除恶意本地进程在检查与操作之间替换目录的所有竞态。服务应使用最小权限账户，且不应允许不可信本地进程修改共享目录结构。
 - 暂未增加断点续传上传、完整 Flutter Web 文件系统适配、全文搜索或多用户权限体系。
+- 后台没有多管理员账户、RBAC、邮件告警、远程证书上传或防篡改审计；主机指标不是容器 cgroup 配额，进程内存单独列出。容量限制为定时清理策略，不是每次生成前的硬配额。
 
 API 约定见 [shared/API_DOCUMENTATION.md](shared/API_DOCUMENTATION.md)，开发约定见 [AGENTS.md](AGENTS.md)。

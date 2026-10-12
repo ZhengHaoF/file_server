@@ -9,12 +9,13 @@
 - `server/utils/fileSafety.js`：路径边界、软链接策略、文件名规范化、不覆盖发布、受控并发。
 - `server/utils/previews.js`：图片/视频缩略图、缓存键、任务合并及队列。
 - `server/utils/logStream.js`：同时供 HTTP/HTTPS 使用的认证 WebSocket 日志。
+- `server/services/`：后台配置持久化、脱敏日志查询、实际采样、缓存维护任务和管理审计。
 - `server/sqllite.js`：单例与可注入数据库路径，启动时非破坏性建表。
 - `server/test/`：使用真实本地 HTTP、临时文件、SQLite、sharp 与 FFmpeg 的 Node 测试。
 - `web/`：Vue 3/Vant 用户客户端，hash 路由，支持登录、分页和图片墙虚拟滚动。
 - `admin/`：Vue 3 管理后台，history 路由，base `/admin/`，使用管理会话 cookie。
 - `flutter-app/`：Flutter 原生客户端；访问凭据只换取内存中的临时会话，上传/下载携带认证头。
-- `shared/API_DOCUMENTATION.md`：唯一 API 约定；修改接口须同步更新。
+- `shared/API_DOCUMENTATION.md`：文件与认证 API；后台完整响应约定见 `shared/ADMIN_CONTRACT.md`，修改接口须同步更新。
 
 ## 修改规则
 
@@ -32,6 +33,8 @@
 - SQLite 表结构变更需非破坏性迁移；普通启动不得调用 DROP 或 init。
 - `config.local.json`、`auth.local.json`、运行数据库和用户证书不能提交或打包。
 - 写日志不得包含长期令牌、临时票据、Authorization/Cookie 或登录请求体。
+- 后台配置仅允许白名单字段；保存须校验 revision、原子写入数据目录中的私有覆盖文件，不能改写打包默认配置或暴露凭据。维护缓存前必须阻止新预览并等待在途任务。
+- `VITE_ADMIN_PREVIEW=1` 仅供标明模拟数据的隔离演示，生产构建必须不设置。管理会话只存内存/HttpOnly cookie，不存 localStorage。
 - HTTP 默认 loopback；启用内网监听/TLS/写入属于部署者的显式选择。
 
 ## 构建与检查
@@ -42,6 +45,7 @@ npm --prefix web ci
 npm --prefix admin ci
 npm --prefix server test
 npm --prefix web test -- --run
+npm --prefix admin test -- --run
 npm run assemble
 npm run pack
 ```

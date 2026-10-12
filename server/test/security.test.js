@@ -30,7 +30,7 @@ async function fixture(overrides = {}) {
         accessToken: FILE_TOKEN, restartPwd: ADMIN_TOKEN, writeEnabled: true, uploadEnabled: true,
         ...overrides }, runtime, {});
     const sql = new Sql(config.imgCache, path.join(runtime, 'cache.db'));
-    const { app, auth } = createApp(config, sql, logger, { staticDir: path.join(runtime, 'web'), adminDir: path.join(runtime, 'admin') });
+    const { app, auth, close: closeApp } = createApp(config, sql, logger, { staticDir: path.join(runtime, 'web'), adminDir: path.join(runtime, 'admin') });
     const server = http.createServer(app);
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const url = `http://127.0.0.1:${server.address().port}`;
@@ -42,6 +42,7 @@ async function fixture(overrides = {}) {
     });
     return { base, shared, runtime, config, sql, server, auth, url, request,
         async close() {
+            await closeApp();
             server.closeAllConnections();
             await new Promise(resolve => server.close(resolve));
             sql.close();

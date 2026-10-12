@@ -51,25 +51,32 @@ export function createPreviewService(config, sql, logger) {
     const images = new WorkQueue(4);
     const videos = new WorkQueue(2, 16);
     const inFlight = new Map();
+    let maintenance = false;
     async function get(filePath, variant, producer, queue) {
+        if (maintenance) throw new HttpError(503, '缓存维护中，请稍后重试预览');
         const stat = await fs.promises.stat(filePath);
         if (!stat.isFile()) throw new HttpError(400, '目标不是文件');
         const key = previewKey(filePath, stat, variant);
+        if (maintenance) throw new HttpError(503, '缓存维护中，请稍后重试预览');
         const output = path.join(config.imgCache, `${key}.jpg`);
         try {
             await fs.promises.access(output);
-            sql.updateInfo(key);
+            const kind = variant.startsWith('video:') ? 'video' : 'image';
+            if (sql.selectInfo(key)) sql.updateInfo(key, kind);
+            else sql.insertInfo(key, '.jpg', kind);
+            if (maintenance) throw new HttpError(503, '缓存维护中，请稍后重试预览');
             return output;
         } catch (error) {
             if (error.code !== 'ENOENT') throw error;
         }
+        if (maintenance) throw new HttpError(503, '缓存维护中，请稍后重试预览');
         if (!inFlight.has(key)) {
             const work = queue.run(async () => {
                 const temp = path.join(config.imgCache, `.preview-${crypto.randomUUID()}.jpg`);
                 try {
                     await producer(temp);
                     await fs.promises.rename(temp, output);
-                    sql.insertInfo(key, '.jpg');
+                    sql.insertInfo(key, '.jpg', variant.startsWith('video:') ? 'video' : 'image');
                     return output;
                 } finally {
                     await fs.promises.unlink(temp).catch(() => {});
@@ -80,6 +87,19 @@ export function createPreviewService(config, sql, logger) {
         return inFlight.get(key);
     }
     return {
+        stats() {
+            return {
+                image: { active: images.active, pending: images.pending.length, limit: images.concurrency },
+                video: { active: videos.active, pending: videos.pending.length, limit: videos.concurrency },
+                maintenance,
+            };
+        },
+        async beginMaintenance() {
+            if (maintenance) throw new HttpError(409, '已有缓存维护任务正在执行');
+            maintenance = true;
+            await Promise.allSettled([...inFlight.values()]);
+        },
+        endMaintenance() { maintenance = false; },
         image(filePath, size) {
             const dimensions = parseImageSize(size);
             return get(filePath, `image:${size}`, temp => sharp(filePath, { limitInputPixels: 64000000 })

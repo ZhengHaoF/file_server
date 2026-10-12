@@ -6,6 +6,7 @@ import { validatePath } from './utils/fileSafety.js';
 
 export function normalizeConfig(raw, cwd = process.cwd(), env = process.env) {
     const config = { ...raw };
+    Object.defineProperty(config, 'configDir', { value: path.resolve(cwd), enumerable: false });
     config.rootPath = fs.realpathSync(path.resolve(cwd, env.FILE_SERVER_ROOT || raw.rootPath || './files'));
     if (!fs.statSync(config.rootPath).isDirectory()) throw new Error('共享路径必须为目录');
     if (config.rootPath === path.parse(config.rootPath).root) {
@@ -30,6 +31,15 @@ export function normalizeConfig(raw, cwd = process.cwd(), env = process.env) {
     config.publicRead = raw.publicRead === true;
     config.writeEnabled = raw.writeEnabled === true;
     config.uploadEnabled = raw.uploadEnabled === true;
+    config.secureCookies = raw.secureCookies === true;
+    config.httpsEnabled = raw.httpsEnabled === true;
+    config.cacheMaxSizeMB = Number(raw.cacheMaxSizeMB ?? 0);
+    config.cacheRetentionDays = Number(raw.cacheRetentionDays ?? 30);
+    config.autoCleanupEnabled = raw.autoCleanupEnabled === true;
+    if (!Number.isInteger(config.cacheMaxSizeMB) || config.cacheMaxSizeMB < 0 || config.cacheMaxSizeMB > 1048576
+        || !Number.isInteger(config.cacheRetentionDays) || config.cacheRetentionDays < 1 || config.cacheRetentionDays > 3650) {
+        throw new Error('缓存容量或保留天数无效');
+    }
     config.host = raw.host || '127.0.0.1';
     config.port = Number(raw.port ?? 3000);
     config.httpsPort = Number(raw.httpsPort ?? 3001);
@@ -41,7 +51,10 @@ export function normalizeConfig(raw, cwd = process.cwd(), env = process.env) {
         throw new Error('无效 uploadMaxSizeMB');
     }
     config.allowedOrigins = Array.isArray(raw.allowedOrigins) ? raw.allowedOrigins : [];
-    if (config.allowedOrigins.some(origin => origin === '*' || !/^https?:\/\/[^/]+$/.test(origin))) {
+    if (config.allowedOrigins.length > 16 || config.allowedOrigins.some(origin => {
+        try { const url = new URL(origin); return !['http:', 'https:'].includes(url.protocol) || url.origin !== origin; }
+        catch { return true; }
+    })) {
         throw new Error('allowedOrigins 只能填写明确的 http/https 来源，不能使用通配符');
     }
     return config;
@@ -53,6 +66,8 @@ export function loadConfig(cwd = process.cwd()) {
     if (fs.existsSync(path.join(cwd, 'config.local.json'))) Object.assign(raw, read('config.local.json'));
     const dataPath = path.resolve(cwd, process.env.FILE_SERVER_DATA_DIR || raw.dataPath || '.');
     fs.mkdirSync(dataPath, { recursive: true });
+    const adminPath = path.join(dataPath, 'admin-config.local.json');
+    if (fs.existsSync(adminPath)) Object.assign(raw, JSON.parse(stripBom(fs.readFileSync(adminPath, 'utf8'))));
     const secretsPath = path.join(dataPath, 'auth.local.json');
     const saved = fs.existsSync(secretsPath) ? JSON.parse(stripBom(fs.readFileSync(secretsPath, 'utf8'))) : {};
     // Replace the historical demonstration password rather than leaving it usable.

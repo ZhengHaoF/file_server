@@ -1,14 +1,8 @@
-<template>
-  <div class="noise-overlay">
-    <div class="ambient-glow"></div>
-    <div class="relative z-10">
-      <router-view />
-    </div>
-  </div>
-</template>
-
 <script setup>
+import ConfirmHost from './components/ConfirmHost.vue'
 </script>
 
-<style scoped>
-</style>
+<template>
+  <RouterView />
+  <ConfirmHost />
+</template>

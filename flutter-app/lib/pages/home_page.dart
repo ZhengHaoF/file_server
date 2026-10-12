@@ -25,6 +25,8 @@ import '../widgets/file_icon.dart';
 import '../widgets/network_log_dialog.dart';
 import '../widgets/desktop_file_browser.dart';
 import '../utils/file_browser_utils.dart';
+import '../widgets/mobile_file_browser.dart';
+import '../widgets/server_connection_sheet.dart';
 import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
@@ -57,9 +59,10 @@ class _HomePageState extends State<HomePage> {
 
   bool get _desktop =>
       (kIsWeb && MediaQuery.sizeOf(context).width >= 700) ||
-      defaultTargetPlatform == TargetPlatform.windows ||
-      defaultTargetPlatform == TargetPlatform.linux ||
-      defaultTargetPlatform == TargetPlatform.macOS;
+      (!kIsWeb &&
+          (defaultTargetPlatform == TargetPlatform.windows ||
+              defaultTargetPlatform == TargetPlatform.linux ||
+              defaultTargetPlatform == TargetPlatform.macOS));
 
   @override
   void initState() {
@@ -876,6 +879,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _handleWillPop(BuildContext context) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     if (_hasDialogOpen) {
       setState(() => _hasDialogOpen = false);
       Navigator.of(context).pop();
@@ -893,7 +897,9 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     } else {
-      context.pop();
+      if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+        SystemNavigator.pop();
+      }
     }
   }
 
@@ -967,56 +973,38 @@ class _HomePageState extends State<HomePage> {
     final files = _viewMode == 'img'
         ? _getImageFilteredFileList()
         : _getSortedFileList();
-    return PopScope(
-      canPop: !_isRoot,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        _handleWillPop(context);
+    return MobileFileBrowser(
+      files: files,
+      path: _currentPath,
+      server: _apiService.serverBaseUrl,
+      loading: _isLoading,
+      error: _loadError,
+      grid: _viewMode == 'img',
+      preferredColumns: _storage.columns,
+      canDownload: !kIsWeb,
+      onRefresh: _loadFileList,
+      onBack: () => _isRoot ? _handleWillPop(context) : context.pop(),
+      onConnect: () async {
+        final previous = _apiService.serverBaseUrl;
+        await showServerConnection(context);
+        if (!mounted) return;
+        if (previous != _apiService.serverBaseUrl) {
+          _currentPath = '';
+          _fileList = [];
+        }
+        _loadFileList();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          leading: _isRoot
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () => context.pop(),
-                ),
-          title: Text(
-            _pathDisplayText,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
-            overflow: TextOverflow.ellipsis,
-          ),
-          centerTitle: true,
-          actions: [
-            if (!kIsWeb)
-              IconButton(
-                icon: const Icon(Icons.upload),
-                tooltip: '上传到当前目录',
-                onPressed: _showUploadSheet,
-              ),
-            if (!kIsWeb)
-              IconButton(
-                icon: const Icon(Icons.download),
-                tooltip: '下载管理',
-                onPressed: () => context.push('/downloads'),
-              ),
-            IconButton(
-              icon: const Icon(Icons.bug_report),
-              tooltip: '网络日志',
-              onPressed: () => NetworkLogDialog.show(context),
-            ),
-            IconButton(
-              icon: Icon(_viewMode == 'list' ? Icons.grid_view : Icons.list),
-              onPressed: _toggleViewMode,
-            ),
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: _openSettings,
-            ),
-          ],
-        ),
-        body: _buildBodyWithDropTarget(files),
-      ),
+      onUpload: _showUploadSheet,
+      onToggleView: _toggleViewMode,
+      onSort: (sort) => setState(() => _storage.fileSort = sort),
+      onOpen: _openDesktopFile,
+      onDownload: _downloadFile,
+      onMore: (file) => _onFileLongPress(files.indexOf(file)),
+      thumbnail: (file) => FileTypeUtils.isImg(file.suffix)
+          ? ApiService.imagePreviewUrl(file.url ?? '', _storage.imgSize)
+          : FileTypeUtils.isVideo(file.suffix) && _storage.videoThumbnail
+          ? _apiService.getVideoPreviewUrl(file.path ?? '')
+          : null,
     );
   }
 

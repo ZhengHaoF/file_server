@@ -7,12 +7,14 @@ import '../pages/text_viewer_page.dart';
 import '../pages/video_player_page.dart';
 import '../pages/settings_page.dart';
 import '../pages/download_manager_page.dart';
+import '../widgets/mobile_navigation_shell.dart';
 
 final GoRouter appRouter = GoRouter(
   initialLocation: '/',
   routes: [
     ShellRoute(
-      builder: (context, state, child) => child,
+      builder: (context, state, child) =>
+          MobileNavigationShell(location: state.uri.path, child: child),
       routes: [
         GoRoute(
           path: '/downloads',
@@ -59,15 +61,22 @@ final GoRouter appRouter = GoRouter(
             return CustomTransitionPage(
               key: state.pageKey,
               child: const HomePage(),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(1.0, 0.0),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(parent: animation, curve: Curves.easeInOut)),
-                  child: child,
-                );
-              },
+              transitionsBuilder:
+                  (context, animation, secondaryAnimation, child) {
+                    return SlideTransition(
+                      position:
+                          Tween<Offset>(
+                            begin: const Offset(1.0, 0.0),
+                            end: Offset.zero,
+                          ).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeInOut,
+                            ),
+                          ),
+                      child: child,
+                    );
+                  },
             );
           },
         ),
@@ -78,15 +87,22 @@ final GoRouter appRouter = GoRouter(
             return CustomTransitionPage(
               key: state.pageKey,
               child: HomePage(path: path),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                return SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(1.0, 0.0),
-                    end: Offset.zero,
-                  ).animate(CurvedAnimation(parent: animation, curve: Curves.easeInOut)),
-                  child: child,
-                );
-              },
+              transitionsBuilder:
+                  (context, animation, secondaryAnimation, child) {
+                    return SlideTransition(
+                      position:
+                          Tween<Offset>(
+                            begin: const Offset(1.0, 0.0),
+                            end: Offset.zero,
+                          ).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: Curves.easeInOut,
+                            ),
+                          ),
+                      child: child,
+                    );
+                  },
             );
           },
         ),

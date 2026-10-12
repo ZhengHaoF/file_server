@@ -15,6 +15,8 @@ class AppDownloadTask {
   final String fileName;
   final String filePath;
   String savePath;
+  String? savedUri;
+  String? errorMsg;
   double progress;
   AppDownloadStatus status;
   final int fileSize;
@@ -27,6 +29,8 @@ class AppDownloadTask {
     required this.fileName,
     required this.filePath,
     this.savePath = '',
+    this.savedUri,
+    this.errorMsg,
     this.progress = 0.0,
     this.status = AppDownloadStatus.enqueued,
     this.fileSize = 0,
@@ -35,17 +39,19 @@ class AppDownloadTask {
   }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'url': url,
-        'fileName': fileName,
-        'filePath': filePath,
-        'savePath': savePath,
-        'progress': progress,
-        'status': status.index,
-        'fileSize': fileSize,
-        'createdAt': createdAt.toIso8601String(),
-        'completedAt': completedAt?.toIso8601String(),
-      };
+    'id': id,
+    'url': url,
+    'fileName': fileName,
+    'filePath': filePath,
+    'savePath': savePath,
+    'savedUri': savedUri,
+    'errorMsg': errorMsg,
+    'progress': progress,
+    'status': status.index,
+    'fileSize': fileSize,
+    'createdAt': createdAt.toIso8601String(),
+    'completedAt': completedAt?.toIso8601String(),
+  };
 
   factory AppDownloadTask.fromJson(Map<String, dynamic> json) {
     return AppDownloadTask(
@@ -54,6 +60,8 @@ class AppDownloadTask {
       fileName: json['fileName'] ?? '',
       filePath: json['filePath'] ?? '',
       savePath: json['savePath'] ?? '',
+      savedUri: json['savedUri'],
+      errorMsg: json['errorMsg'],
       progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
       status: AppDownloadStatus.values[json['status'] ?? 0],
       fileSize: json['fileSize'] ?? 0,

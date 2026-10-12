@@ -19,7 +19,13 @@ class DownloadService extends ChangeNotifier {
   factory DownloadService() => _instance;
   DownloadService._internal();
 
-  final Dio _dio = Dio(BaseOptions(followRedirects: false));
+  final Dio _dio = Dio(
+    BaseOptions(
+      followRedirects: false,
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 60),
+    ),
+  );
   final List<AppDownloadTask> _tasks = [];
   final Map<String, CancelToken> _cancelTokens = {};
   bool _initialized = false;
@@ -74,21 +80,21 @@ class DownloadService extends ChangeNotifier {
   }
 
   /// Android 版本号（如 14、13），非 Android 平台返回 0
-  int get _androidVersion {
-    if (!Platform.isAndroid) return 0;
-    final ver = Platform.operatingSystemVersion;
-    final match = RegExp(r'^(\d+)').firstMatch(ver);
-    return match != null ? int.parse(match.group(1)!) : 0;
-  }
+  Future<int> get _androidSdk async =>
+      await _kChannel.invokeMethod<int>('getSdkVersion') ?? 0;
 
   /// 计算文件的最终保存路径
   Future<String> _resolveSavePath(String fileName) async {
     if (Platform.isAndroid) {
       // Android 10+：下载到临时目录（后续会插入 MediaStore，保留临时文件用于预览）
       // Android 9-：直接写公共 Download 目录
-      if (_androidVersion >= 10) {
+      if (await _androidSdk >= 29) {
         return '$_tempDir/$fileName';
       }
+      final allowed = await _kChannel.invokeMethod<bool>(
+        'requestStoragePermission',
+      );
+      if (allowed != true) throw StateError('未获得存储权限，请在系统设置中授权');
       final result = await _kChannel.invokeMethod<String>(
         'getExternalDownloads',
       );
@@ -118,7 +124,13 @@ class DownloadService extends ChangeNotifier {
       }
     }
 
-    // iOS / Web：使用临时目录
+    if (Platform.isIOS) {
+      final documents = await getApplicationDocumentsDirectory();
+      final dir = Directory('${documents.path}/Downloads');
+      await dir.create(recursive: true);
+      return '${dir.path}/$fileName';
+    }
+
     return '$_tempDir/$fileName';
   }
 
@@ -165,6 +177,7 @@ class DownloadService extends ChangeNotifier {
     _cancelTokens[task.id] = cancelToken;
 
     task.status = AppDownloadStatus.downloading;
+    task.errorMsg = null;
     notifyListeners();
 
     try {
@@ -184,10 +197,10 @@ class DownloadService extends ChangeNotifier {
       if (cancelToken.isCancelled) return;
 
       // Android 10+ 需要额外插入 MediaStore（临时文件保留用于预览）
-      if (Platform.isAndroid && _androidVersion >= 10) {
+      if (Platform.isAndroid && await _androidSdk >= 29) {
         final tempFile = File(task.savePath);
         if (await tempFile.exists()) {
-          await _insertToMediaStore(tempFile, task.fileName);
+          task.savedUri = await _insertToMediaStore(tempFile, task.fileName);
           // 临时文件不删除，task.savePath 指向它，用于 App 内预览
         }
       }
@@ -199,6 +212,7 @@ class DownloadService extends ChangeNotifier {
       if (cancelToken.isCancelled) return;
 
       task.status = AppDownloadStatus.failed;
+      task.errorMsg = '下载失败，请检查连接与授权后重试';
       debugPrint('下载失败 [${e.type}]: ${e.message}');
       debugPrint('  状态码: ${e.response?.statusCode}');
       debugPrint('  响应: ${e.response?.data}');
@@ -206,6 +220,7 @@ class DownloadService extends ChangeNotifier {
       if (cancelToken.isCancelled) return;
 
       task.status = AppDownloadStatus.failed;
+      task.errorMsg = '保存失败: $e';
       debugPrint('下载失败: $e');
       debugPrint('  保存路径: ${task.savePath}');
     } finally {
@@ -218,7 +233,7 @@ class DownloadService extends ChangeNotifier {
 
   // ── Android 10+：通过 MediaStore 插入公共目录 ──
 
-  Future<void> _insertToMediaStore(File tempFile, String fileName) async {
+  Future<String> _insertToMediaStore(File tempFile, String fileName) async {
     final mimeType = lookupMimeType(fileName) ?? 'application/octet-stream';
     final isMedia =
         mimeType.startsWith('image/') || mimeType.startsWith('video/');
@@ -230,9 +245,16 @@ class DownloadService extends ChangeNotifier {
       'tempFilePath': tempFile.path,
     });
 
-    if (uri != null) {
-      debugPrint('已保存到 MediaStore: $uri');
-    }
+    if (uri == null || uri.isEmpty) throw StateError('系统未确认文件保存');
+    return uri;
+  }
+
+  Future<void> openSavedFile(AppDownloadTask task) async {
+    if (task.savedUri == null) throw StateError('没有系统保存位置');
+    await _kChannel.invokeMethod<void>('openSavedFile', {
+      'uri': task.savedUri,
+      'mimeType': lookupMimeType(task.fileName) ?? 'application/octet-stream',
+    });
   }
 
   // ── 任务管理 ──
@@ -265,6 +287,8 @@ class DownloadService extends ChangeNotifier {
     task.id = DateTime.now().microsecondsSinceEpoch.toString();
     task.status = AppDownloadStatus.enqueued;
     task.progress = 0.0;
+    task.savedUri = null;
+    task.errorMsg = null;
     task.completedAt = null;
     _saveTasks();
     notifyListeners();
@@ -319,6 +343,7 @@ class DownloadService extends ChangeNotifier {
       if (task.status == AppDownloadStatus.downloading ||
           task.status == AppDownloadStatus.enqueued) {
         task.status = AppDownloadStatus.failed;
+        task.errorMsg = '传输已中断，请重试（不是断点续传）';
       }
     }
     notifyListeners();

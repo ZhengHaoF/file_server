@@ -13,7 +13,14 @@ class UploadService extends ChangeNotifier {
   factory UploadService() => _instance;
   UploadService._internal();
 
-  final Dio _dio = Dio(BaseOptions(followRedirects: false));
+  final Dio _dio = Dio(
+    BaseOptions(
+      followRedirects: false,
+      connectTimeout: const Duration(seconds: 15),
+      sendTimeout: const Duration(seconds: 60),
+      receiveTimeout: const Duration(seconds: 60),
+    ),
+  );
   final List<AppUploadTask> _tasks = [];
   final Map<String, CancelToken> _cancelTokens = {};
   bool _initialized = false;
@@ -59,9 +66,10 @@ class UploadService extends ChangeNotifier {
         fileName: item.fileName,
         destPath: destPath,
         localPath: item.localPath,
+        serverUrl: ApiService().serverBaseUrl,
         fileSize: item.fileSize,
       );
-      _tasks.insert(0, task);
+      _tasks.add(task);
     }
     _saveTasks();
     notifyListeners();
@@ -93,6 +101,12 @@ class UploadService extends ChangeNotifier {
     notifyListeners();
 
     try {
+      if (task.serverUrl.isEmpty ||
+          task.serverUrl != ApiService().serverBaseUrl) {
+        throw StateError('任务属于其他或未知服务器，请切回原服务器后重试');
+      }
+      final uploadUrl = '${task.serverUrl}/upload';
+      final headers = ApiService().authHeadersFor(uploadUrl);
       // destPath 必须排在 file 之前：后端在 multer 的 destination 回调里读取它决定落盘目录
       final formData = FormData.fromMap({
         'destPath': task.destPath,
@@ -103,13 +117,9 @@ class UploadService extends ChangeNotifier {
       });
 
       await _dio.post(
-        '${ApiService().serverBaseUrl}/upload',
+        uploadUrl,
         data: formData,
-        options: Options(
-          headers: ApiService().authHeadersFor(
-            '${ApiService().serverBaseUrl}/upload',
-          ),
-        ),
+        options: Options(headers: headers),
         cancelToken: cancelToken,
         onSendProgress: (sent, total) {
           if (total > 0) {

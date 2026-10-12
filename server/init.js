@@ -1,23 +1,17 @@
-/**
- * 初始化整个项目,清空数据库，删除缓存目录
- */
+// Explicitly destructive maintenance only; ordinary startup initializes schemas safely.
+import fs from 'node:fs';
+import { loadConfig } from './configuration.js';
+import { Sql } from './sqllite.js';
 
-import stripBom from "strip-bom";
-import fs from 'fs';
-const config = JSON.parse(stripBom(fs.readFileSync("config.json", 'utf8')));
-
-for (const dir of ['imgCache', 'logs']) {
-    try {
-        fs.rmSync(dir, { recursive: true, force: true });
-        console.log(`清空 ${dir} 成功`);
-    } catch (err) {
-        console.log(`${dir} 文件夹不存在`);
-    }
-    fs.mkdirSync(dir, { recursive: true });
+if (!process.argv.includes('--force')) {
+    console.error('此命令会清空缓存、日志与缓存数据库。正常启动无需初始化；确认后运行 node init.js --force。');
+    process.exitCode = 1;
+} else {
+    const config = loadConfig();
+    fs.rmSync(config.imgCache, { recursive: true, force: true });
+    fs.mkdirSync(config.imgCache, { recursive: true });
+    fs.rmSync('logs', { recursive: true, force: true });
+    fs.mkdirSync('logs', { recursive: true });
+    new Sql(config.imgCache, config.dbPath).init();
+    console.log('缓存、日志与缓存数据库已清空，原始共享文件未修改。');
 }
-
-import { Sql } from "./sqllite.js"
-
-let sql = new Sql(config['imgCache']);
-sql.init();
-console.error(`清空数据库成功`);

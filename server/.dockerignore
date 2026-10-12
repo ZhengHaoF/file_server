@@ -1,0 +1,9 @@
+node_modules
+dist
+logs
+imgCache
+*.db*
+auth.local.json
+config.local.json
+cert
+test

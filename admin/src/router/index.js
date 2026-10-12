@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AdminLayout from '../layouts/AdminLayout.vue'
+import axios from 'axios'
 
 const routes = [
   {
@@ -48,17 +49,13 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
-  const token = localStorage.getItem('adminToken')
-  
-  if (to.meta.requiresAuth && !token) {
-    // 需要认证但没有 token，跳转登录
-    next('/login')
-  } else if (to.path === '/login' && token) {
-    // 已登录访问登录页，跳转仪表盘
-    next('/dashboard')
-  } else {
-    next()
+router.beforeEach(async (to) => {
+  if (!to.meta.requiresAuth) return true;
+  try {
+    await axios.get('/api/admin/status', { withCredentials: true, timeout: 10000 });
+    return true;
+  } catch {
+    return '/login';
   }
 })
 

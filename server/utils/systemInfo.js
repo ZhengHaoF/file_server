@@ -2,7 +2,6 @@ import os from 'os';
 import fs from 'fs';
 import { statfsSync } from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
 import readline from 'readline';
 
 // CPU 使用率采样
@@ -96,32 +95,16 @@ export function getDiskInfo(targetPath) {
  * @param {string} dirPath 目录路径
  * @returns {number} 目录大小（字节）
  */
-function getDirectorySizeSync(dirPath) {
-    try {
-        if (process.platform === 'win32') {
-            // Windows: 使用 PowerShell 获取目录大小
-            const output = execSync(
-                `(Get-ChildItem -Path '${dirPath}' -Recurse -File | Measure-Object -Property Length -Sum).Sum`,
-                { encoding: 'utf8', timeout: 10000, shell: 'powershell.exe' }
-            );
-            return parseInt(output.trim()) || 0;
-        } else {
-            // Linux/Mac: 使用 du 命令
-            const output = execSync(`du -sb "${dirPath}"`, { encoding: 'utf8', timeout: 10000 });
-            return parseInt(output.split('\t')[0]) || 0;
-        }
-    } catch (err) {
-        console.error('获取目录大小失败:', err.message);
-        return 0;
-    }
-}
+const cacheStats = new Map();
 
 /**
  * 获取缓存目录统计信息（优化版：使用 withFileTypes 和系统命令）
  * @param {string} cachePath 缓存目录路径
  * @returns {Object} 缓存统计
  */
-export function getCacheStats(cachePath) {
+export async function getCacheStats(cachePath) {
+    const saved = cacheStats.get(cachePath);
+    if (saved && saved.expires > Date.now()) return saved.value;
     const result = {
         totalFiles: 0,
         totalSize: 0,
@@ -137,17 +120,19 @@ export function getCacheStats(cachePath) {
         }
 
         // 使用 withFileTypes 直接判断是否是文件，无需额外 stat
-        const entries = fs.readdirSync(cachePath, { withFileTypes: true });
+        const entries = await fs.promises.readdir(cachePath, { withFileTypes: true });
 
-        entries.forEach(entry => {
-            if (entry.isFile()) {
+        for (const entry of entries) {
+            if (entry.isFile() && !entry.name.startsWith('.')) {
+                const stat = await fs.promises.stat(path.join(cachePath, entry.name)).catch(() => null);
+                if (!stat) continue;
                 result.totalFiles++;
                 result.imageCache.count++;
+                result.totalSize += stat.size;
             }
-        });
+        }
 
         // 使用系统命令获取目录大小（比逐文件 stat 快很多）
-        result.totalSize = getDirectorySizeSync(cachePath);
         result.imageCache.size = result.totalSize;
         result.videoCache.size = 0;
 
@@ -155,6 +140,7 @@ export function getCacheStats(cachePath) {
         console.error('获取缓存统计失败:', err.message);
     }
 
+    cacheStats.set(cachePath, { value: result, expires: Date.now() + 30000 });
     return result;
 }
 
@@ -265,46 +251,17 @@ export function parseLogLine(line) {
  * @param {number|null} days 清理 N 天前的缓存，null 表示全部清理
  * @returns {Promise<Object>} 清理结果
  */
-export function cleanCache(cachePath, days = null) {
-    return new Promise((resolve, reject) => {
-        try {
-            if (!fs.existsSync(cachePath)) {
-                resolve({ msg: '缓存目录不存在', cleaned: 0 });
-                return;
-            }
-
-            const files = fs.readdirSync(cachePath);
-            let cleaned = 0;
-            const now = Date.now();
-            const threshold = days ? days * 24 * 60 * 60 * 1000 : 0;
-
-            files.forEach(file => {
-                const filePath = path.join(cachePath, file);
-                try {
-                    const stats = fs.statSync(filePath);
-
-                    if (stats.isFile()) {
-                        // 跳过 .gitkeep 等特殊文件
-                        if (file.startsWith('.')) return;
-
-                        if (!days || (now - stats.mtime.getTime() > threshold)) {
-                            fs.unlinkSync(filePath);
-                            cleaned++;
-                        }
-                    }
-                } catch (err) {
-                    // 忽略无法删除的文件
-                }
-            });
-
-            resolve({
-                msg: days ? `清理 ${days} 天前的缓存成功` : '清空全部缓存成功',
-                cleaned
-            });
-        } catch (err) {
-            reject(err);
-        }
-    });
+export async function cleanCache(cachePath, days = null) {
+    if (days !== null) throw new Error('按天清理应使用数据库最近访问时间');
+    const entries = await fs.promises.readdir(cachePath, { withFileTypes: true });
+    let cleaned = 0;
+    for (const entry of entries) {
+        if (!entry.isFile() || entry.name.startsWith('.')) continue;
+        await fs.promises.unlink(path.join(cachePath, entry.name));
+        cleaned++;
+    }
+    cacheStats.delete(cachePath);
+    return { msg: '清空缓存成功', cleaned };
 }
 
 /**
@@ -327,6 +284,7 @@ export function getMaskedConfig(config) {
     if (masked.restartPwd) {
         masked.restartPwd = '******';
     }
+    if (masked.accessToken) masked.accessToken = '******';
 
     return masked;
 }

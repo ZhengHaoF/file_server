@@ -23,7 +23,7 @@ export function useFilePath() {
   });
 
   const pathSegments = computed(() => {
-    const path = currentPath.value.replace(/^\$/, '');
+    const path = currentPath.value;
     if (!path) return [];
     return path.split('/').filter(Boolean);
   });
@@ -35,7 +35,7 @@ export function useFilePath() {
     pathSegments.value.forEach((segment) => {
       accumulatedPath = accumulatedPath ? `${accumulatedPath}/${segment}` : segment;
       crumbs.push({
-        name: decodeURIComponent(segment),
+        name: segment,
         path: accumulatedPath
       });
     });
@@ -45,7 +45,9 @@ export function useFilePath() {
 
   const sanitizePath = (path) => {
     if (!path) return '';
-    return path.replace(/\.\./g, '').replace(/[<>:"|?*]/g, '').replace(/^\/+|\/+$/g, '');
+    const cleaned = path.replace(/^\/+|\/+$/g, '');
+    if (cleaned.split('/').some(segment => segment === '..' || segment === '.') || cleaned.includes('\0')) return '';
+    return cleaned;
   };
 
   const encodePathSegment = (segment) => {
@@ -65,17 +67,16 @@ export function useFilePath() {
     currentPath.value = cleanPath;
     
     if (cleanPath) {
-      router.push(`/${cleanPath}`);
+      router.push(`/${cleanPath.split('/').map(encodePathSegment).join('/')}`);
     } else {
       router.push('/');
     }
   };
 
   const enterDirectory = (dirName) => {
-    const encodedName = encodePathSegment(dirName);
     const newPath = currentPath.value 
-      ? `${currentPath.value}/${encodedName}`
-      : encodedName;
+      ? `${currentPath.value}/${dirName}`
+      : dirName;
     navigateTo(newPath);
   };
 

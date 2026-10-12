@@ -1,0 +1,32 @@
+name: Test
+on:
+  push:
+  pull_request:
+jobs:
+  server-and-web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm --prefix server ci
+      - run: npm --prefix web ci
+      - run: npm --prefix admin ci
+      - run: npm --prefix server test
+      - run: npm --prefix web test -- --run
+      - run: npm run assemble
+      - run: npm run pack
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+        working-directory: flutter-app
+      - run: flutter analyze --no-fatal-infos
+        working-directory: flutter-app
+      - run: flutter test
+        working-directory: flutter-app

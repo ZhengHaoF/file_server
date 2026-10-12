@@ -71,7 +71,9 @@ function startServer() {
         }
     });
 
-    process.on('SIGINT', () => {
+}
+
+    process.once('SIGINT', () => {
         log('收到终止信号，关闭服务器...');
         if (currentSubprocess) {
             currentSubprocess.kill('SIGTERM');
@@ -79,7 +81,7 @@ function startServer() {
         process.exit(0);
     });
 
-    process.on('SIGTERM', () => {
+    process.once('SIGTERM', () => {
         log('收到终止信号，关闭服务器...');
         if (currentSubprocess) {
             currentSubprocess.kill('SIGTERM');
@@ -87,10 +89,9 @@ function startServer() {
         process.exit(0);
     });
 
-    process.on('exit', (code) => {
+    process.once('exit', (code) => {
         log(`主进程退出，退出码: ${code}`);
     });
-}
 
 log('='.repeat(50));
 log('服务器管理程序启动');

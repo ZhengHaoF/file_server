@@ -22,6 +22,8 @@ coverage
 
 # 打包产物（npm run pack 生成，用于上传 Releases）
 file-serve-v*.zip
+file-serve-v*.tar.gz
+_pack-*
 
 # OS
 .DS_Store
@@ -34,6 +36,11 @@ Thumbs.db
 # 运行时生成的缓存和数据库
 server/imgCache/
 server/imgCache.db
+server/imgCache.db-*
+server/auth.local.json
+server/config.local.json
+server/data/
+server/cert/*.local.*
 server/logs/
 
 # node 可执行文件（历史打包/捆绑方案遗留，保持忽略）

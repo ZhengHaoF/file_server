@@ -481,7 +481,7 @@ class _HomePageState extends State<HomePage> {
         return f.url ?? '';
       }
       final w = (MediaQuery.of(context).size.width * MediaQuery.of(context).devicePixelRatio).round();
-      return '${f.url}!${w}x$w';
+      return ApiService.imagePreviewUrl(f.url ?? '', w);
     }).toList();
 
     final heroTags = imageFiles.map((f) => 'grid_image_${f.name}').toList();
@@ -1060,7 +1060,7 @@ class _HomePageState extends State<HomePage> {
         previewUrl = _apiService.getVideoPreviewUrl(file.path ?? '');
       } else if (isImage) {
         final w = _storage.imgSize;
-        previewUrl = '${file.url}!${w}x$w';
+        previewUrl = ApiService.imagePreviewUrl(file.url ?? '', w);
       }
     }
 

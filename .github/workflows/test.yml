@@ -13,7 +13,7 @@ jobs:
       - run: npm --prefix server ci
       - run: npm --prefix web ci
       - run: npm --prefix admin ci
-      - run: npm --prefix server test
+      - run: npm --prefix server run check
       - run: npm --prefix web test -- --run
       - run: npm --prefix admin test -- --run
       - run: npm run assemble

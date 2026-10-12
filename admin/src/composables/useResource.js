@@ -19,11 +19,11 @@ export function useResource(fetcher, { interval = 0, immediate = true, sampledAt
   let timer = null
   let stopped = false
 
-  async function load() {
+  async function load(options = {}) {
     const token = latest.begin()
     loading.value = true
     try {
-      const result = await fetcher({ signal: token.signal })
+      const result = await fetcher({ ...options, signal: token.signal })
       if (!token.isCurrent()) return
       data.value = result
       error.value = null

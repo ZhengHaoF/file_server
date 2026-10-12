@@ -519,42 +519,59 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                       ],
                     ),
                   ),
-                  if (selected.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 4,
-                      ),
-                      color: colors.primaryContainer.withValues(alpha: .45),
-                      child: Row(
-                        children: [
-                          Expanded(child: Text('已选择 ${selected.length} 项')),
-                          if (selected.any((f) => f.isFile))
-                            _button(
-                              Icons.download_outlined,
-                              '下载选中文件',
-                              _downloadSelected,
+                  Container(
+                    // Reserve command-bar height. Inserting it only after
+                    // selection moves the row under the second double-click.
+                    height: 48,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 4,
+                    ),
+                    color: selected.isEmpty
+                        ? colors.surface
+                        : colors.primaryContainer.withValues(alpha: .45),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            selected.isEmpty
+                                ? '单击选择 · 双击打开 · Ctrl / Shift 多选'
+                                : '已选择 ${selected.length} 项',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: colors.onSurfaceVariant,
                             ),
-                          if (selected.length == 1) ...[
-                            _button(
-                              Icons.edit_outlined,
-                              '重命名 · F2',
-                              () => widget.onRename(selected.single),
-                            ),
-                            _button(
-                              Icons.delete_outline,
-                              '删除（需确认）',
-                              () => widget.onDelete(selected.single),
-                            ),
-                          ],
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (selected.any((f) => f.isFile))
+                          _button(
+                            Icons.download_outlined,
+                            '下载选中文件',
+                            _downloadSelected,
+                          ),
+                        if (selected.length == 1) ...[
+                          _button(
+                            Icons.edit_outlined,
+                            '重命名 · F2',
+                            () => widget.onRename(selected.single),
+                          ),
+                          _button(
+                            Icons.delete_outline,
+                            '删除（需确认）',
+                            () => widget.onDelete(selected.single),
+                          ),
+                        ],
+                        if (selected.isNotEmpty)
                           _button(
                             Icons.close,
                             '取消选择 · Escape',
                             () => setState(_selection.clear),
                           ),
-                        ],
-                      ),
+                      ],
                     ),
+                  ),
                   if (widget.error != null)
                     Material(
                       color: colors.errorContainer,

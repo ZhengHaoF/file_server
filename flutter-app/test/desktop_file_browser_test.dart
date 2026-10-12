@@ -222,6 +222,20 @@ void main() {
     },
   );
 
+  testWidgets('selection never moves rows under a double-click', (
+    tester,
+  ) async {
+    await mount(tester);
+    final item = find.byKey(const ValueKey('file:b.txt'));
+    final before = tester.getCenter(item);
+    await tester.tapAt(before);
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(tester.getCenter(item), before);
+    await tester.tapAt(before);
+    await tester.pumpAndSettle();
+    expect(events, ['open:b.txt']);
+  });
+
   testWidgets('Ctrl+A selects visible files only and Escape clears', (
     tester,
   ) async {

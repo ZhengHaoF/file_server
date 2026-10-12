@@ -4,7 +4,9 @@ import { loadConfig } from './configuration.js';
 import { Sql } from './sqllite.js';
 
 if (!process.argv.includes('--force')) {
-    console.error('此命令会清空缓存、日志与缓存数据库。正常启动无需初始化；确认后运行 node init.js --force。');
+    console.error(
+        '此命令会清空缓存、日志与缓存数据库。正常启动无需初始化；确认后运行 node init.js --force。',
+    );
     process.exitCode = 1;
 } else {
     const config = loadConfig();

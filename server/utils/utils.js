@@ -4,7 +4,7 @@
  * @param cFormat
  * @cFormat 格式化方法 例：'{y}-{m}-{d}-{h}-{i}-{s}-{a}'
  */
-export const formatDate = function(time, cFormat = null) {
+export const formatDate = function (time, cFormat = null) {
     const format = cFormat || '{y}-{m}-{d}';
     const date = new Date(time);
     const formatObj = {
@@ -21,8 +21,7 @@ export const formatDate = function(time, cFormat = null) {
         //秒
         s: date.getSeconds(),
         //星期
-        a: date.getDay()
-
+        a: date.getDay(),
     };
     return format.replace(/{([ymdhisa])+}/g, (result, key) => {
         const value = formatObj[key];

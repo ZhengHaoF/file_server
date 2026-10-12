@@ -104,7 +104,7 @@ onMounted(async () => {
       </div>
       <div class="page-actions">
         <SampleStamp :at="stats.sampledAt.value" :stale="stats.stale.value" :loading="stats.loading.value" label="统计于" />
-        <button type="button" class="btn" :disabled="stats.loading.value" data-testid="button-refresh-cache" @click="stats.load()"><RefreshCw :class="{ spin: stats.loading.value }" aria-hidden="true" />重新统计</button>
+        <button type="button" class="btn" :disabled="stats.loading.value" data-testid="button-refresh-cache" @click="stats.load({ query: { refresh: 'true' } })"><RefreshCw :class="{ spin: stats.loading.value }" aria-hidden="true" />重新统计</button>
       </div>
     </div>
 

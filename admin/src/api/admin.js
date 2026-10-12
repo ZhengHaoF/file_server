@@ -12,7 +12,7 @@ export const getStatus = (opts) => http.get('/api/admin/status', opts)
 export const restartServer = (opts) => http.post('/api/admin/restart', {}, opts)
 
 // Cache
-export const getCacheStats = (opts) => http.get('/api/admin/cache/stats', { ...opts, query: { refresh: 'true' } })
+export const getCacheStats = (opts) => http.get('/api/admin/cache/stats', opts)
 export const startCacheJob = (payload, opts) => http.post('/api/admin/cache/jobs', payload, opts)
 
 // Operations
@@ -21,7 +21,7 @@ export const getJob = (id, opts) => http.get(`/api/admin/jobs/${encodeURICompone
 export const listAudit = ({ limit = 50, before } = {}, opts) => http.get('/api/admin/audit', { ...opts, query: { limit, before } })
 
 // Logs
-export const getLogs = (query, opts) => http.get('/api/admin/logs', { ...opts, query })
+export const getLogs = (query, opts) => http.get('/api/admin/logs', { ...opts, query: { order: 'append', ...query } })
 export const exportLogs = (query, opts) => http.get('/api/admin/logs/export', { timeout: 60000, ...opts, query, responseType: 'blob' })
 
 // Config

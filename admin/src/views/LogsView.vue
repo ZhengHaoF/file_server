@@ -219,7 +219,7 @@ defineExpose({ ingest, query })
     <div class="page-head">
       <div>
         <h1 id="logs-title">日志</h1>
-        <p>按时间倒序显示服务器日志。筛选会立即取消尚未返回的旧查询。</p>
+        <p>按日志追加顺序显示最新记录。筛选会立即取消尚未返回的旧查询；轮转使游标失效时请刷新。</p>
       </div>
       <div class="page-actions">
         <SampleStamp :at="fetchedAt" :loading="loading" label="查询于" />

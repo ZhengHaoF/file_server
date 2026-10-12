@@ -5,14 +5,17 @@
 import { loadConfig } from './configuration.js';
 const config = loadConfig();
 
-import { Sql } from "./sqllite.js"
+import { Sql } from './sqllite.js';
 
-let sql = new Sql(config.imgCache, config.dbPath);
-console.log("开始清空过期数据")
-sql.cleanOldData().then((res)=>{
-    console.log(`清理了${res}条数据`);
-    sql.close();
-}).catch((err)=>{
-    console.error(err);
-    sql.close();
-});
+const sql = new Sql(config.imgCache, config.dbPath);
+console.log('开始清空过期数据');
+sql.cleanOldData()
+    .then((res) => {
+        console.log(`清理了${res}条数据`);
+        sql.close();
+    })
+    .catch((err) => {
+        process.exitCode = 1;
+        console.error(err);
+        sql.close();
+    });

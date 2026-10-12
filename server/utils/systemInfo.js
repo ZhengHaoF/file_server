@@ -1,8 +1,8 @@
-import os from 'os';
-import fs from 'fs';
-import { statfsSync } from 'fs';
-import path from 'path';
-import readline from 'readline';
+import os from 'node:os';
+import fs from 'node:fs';
+import { statfsSync } from 'node:fs';
+import path from 'node:path';
+import readline from 'node:readline';
 
 // CPU 使用率采样
 let lastCpuInfo = null;
@@ -19,8 +19,8 @@ export function getCpuUsage() {
         let totalIdle = 0;
         let totalTick = 0;
 
-        cpus.forEach(cpu => {
-            for (let type in cpu.times) {
+        cpus.forEach((cpu) => {
+            for (const type in cpu.times) {
                 totalTick += cpu.times[type];
             }
             totalIdle += cpu.times.idle;
@@ -36,14 +36,14 @@ export function getCpuUsage() {
             lastCpuInfo = currentInfo;
             resolve({
                 usage: parseFloat(usage),
-                cores
+                cores,
             });
         } else {
             // 首次调用，返回 0，等待下次计算
             lastCpuInfo = currentInfo;
             resolve({
                 usage: 0,
-                cores
+                cores,
             });
         }
     });
@@ -62,7 +62,7 @@ export function getMemoryInfo() {
         total: Math.round(total / 1024 / 1024),
         free: Math.round(free / 1024 / 1024),
         used: Math.round(used / 1024 / 1024),
-        usage: parseFloat((used / total * 100).toFixed(1))
+        usage: parseFloat(((used / total) * 100).toFixed(1)),
     };
 }
 
@@ -71,6 +71,32 @@ export function getMemoryInfo() {
  * @param {string} targetPath 目标路径
  * @returns {Object} 磁盘信息
  */
+export async function getDiskInfoAsync(targetPath) {
+    try {
+        const stats = await fs.promises.statfs(targetPath);
+        const total = stats.blocks * stats.bsize;
+        const used = (stats.blocks - stats.bfree) * stats.bsize;
+        return {
+            total: Math.round(total / 1024 / 1024 / 1024),
+            used: Math.round(used / 1024 / 1024 / 1024),
+            free: Math.round((stats.bavail * stats.bsize) / 1024 / 1024 / 1024),
+            usage: total ? Number(((used / total) * 100).toFixed(1)) : null,
+            available: total > 0,
+            sampledAt: Date.now(),
+        };
+    } catch {
+        return {
+            total: null,
+            used: null,
+            free: null,
+            usage: null,
+            available: false,
+            sampledAt: Date.now(),
+        };
+    }
+}
+
+// Legacy synchronous helper; the running admin sampler uses getDiskInfoAsync.
 export function getDiskInfo(targetPath) {
     try {
         const stats = statfsSync(targetPath);
@@ -82,7 +108,7 @@ export function getDiskInfo(targetPath) {
             total: Math.round(total / 1024 / 1024 / 1024),
             used: Math.round(used / 1024 / 1024 / 1024),
             free: Math.round(free / 1024 / 1024 / 1024),
-            usage: total === 0 ? 0 : parseFloat((used / total * 100).toFixed(1))
+            usage: total === 0 ? 0 : parseFloat(((used / total) * 100).toFixed(1)),
         };
     } catch (err) {
         console.error('获取磁盘信息失败:', err.message);
@@ -111,7 +137,7 @@ export async function getCacheStats(cachePath) {
         imageCache: { count: 0, size: 0 },
         videoCache: { count: 0, size: 0 },
         oldestCache: null,
-        newestCache: null
+        newestCache: null,
     };
 
     try {
@@ -124,7 +150,9 @@ export async function getCacheStats(cachePath) {
 
         for (const entry of entries) {
             if (entry.isFile() && !entry.name.startsWith('.')) {
-                const stat = await fs.promises.stat(path.join(cachePath, entry.name)).catch(() => null);
+                const stat = await fs.promises
+                    .stat(path.join(cachePath, entry.name))
+                    .catch(() => null);
                 if (!stat) continue;
                 result.totalFiles++;
                 result.imageCache.count++;
@@ -135,7 +163,6 @@ export async function getCacheStats(cachePath) {
         // 使用系统命令获取目录大小（比逐文件 stat 快很多）
         result.imageCache.size = result.totalSize;
         result.videoCache.size = 0;
-
     } catch (err) {
         console.error('获取缓存统计失败:', err.message);
     }
@@ -154,7 +181,7 @@ export function getDatabaseInfo(dbPath) {
         dbPath: dbPath,
         dbSize: 0,
         recordCount: 0,
-        tables: []
+        tables: [],
     };
 
     try {
@@ -229,7 +256,7 @@ export function parseLogLine(line) {
                 timestamp: match[1],
                 level: match[2],
                 category: match[3] || 'default',
-                message: match[4]
+                message: match[4],
             };
         }
 
@@ -238,7 +265,7 @@ export function parseLogLine(line) {
             timestamp: new Date().toISOString(),
             level: 'INFO',
             category: 'default',
-            message: line
+            message: line,
         };
     } catch (err) {
         return null;

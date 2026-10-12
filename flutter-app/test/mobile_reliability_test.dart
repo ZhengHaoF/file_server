@@ -57,8 +57,27 @@ void main() {
         await expectLater(api.getFileList(''), throwsException);
         expect(api.isLoggedIn, true);
         code = 401;
-        await expectLater(api.getFileList(''), throwsException);
+        await expectLater(
+          api.getFileList(''),
+          throwsA(
+            isA<Exception>().having(
+              (e) => e.toString(),
+              'message',
+              contains('会话已失效'),
+            ),
+          ),
+        );
         expect(api.isLoggedIn, false);
+        await expectLater(
+          api.getFileList(''),
+          throwsA(
+            isA<Exception>().having(
+              (e) => e.toString(),
+              'message',
+              contains('请连接并登录'),
+            ),
+          ),
+        );
       }, RealHttp());
     },
   );

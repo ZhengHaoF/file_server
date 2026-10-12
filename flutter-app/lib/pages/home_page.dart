@@ -58,7 +58,12 @@ class _HomePageState extends State<HomePage> {
   int _historyIndex = 0;
 
   bool get _desktop =>
-      (kIsWeb && MediaQuery.sizeOf(context).width >= 700) ||
+      (kIsWeb &&
+          MediaQuery.sizeOf(context).width >= 700 &&
+          ![
+            TargetPlatform.android,
+            TargetPlatform.iOS,
+          ].contains(defaultTargetPlatform)) ||
       (!kIsWeb &&
           (defaultTargetPlatform == TargetPlatform.windows ||
               defaultTargetPlatform == TargetPlatform.linux ||

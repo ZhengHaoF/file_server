@@ -169,18 +169,21 @@ class ApiService {
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) rethrow;
       if (e.response?.statusCode == 401) {
+        final hadSession = server == _serverBaseUrl && _sessionToken != null;
         if (server == _serverBaseUrl) {
           _sessionToken = null;
           _readTicket = null;
           _ticketExpiresAt = 0;
           _dio.options.headers.remove('Authorization');
         }
-        throw Exception('会话已失效，请连接并登录文件服务');
+        throw Exception(hadSession ? '会话已失效，请连接并登录文件服务' : '请连接并登录文件服务');
       }
       if (e.response?.statusCode == 404) {
         rethrow;
       }
-      String msg = '获取文件列表失败: ${e.message}';
+      String msg = e.response == null
+          ? '无法连接文件服务，请检查地址、局域网权限和网络'
+          : '文件服务暂不可用，请稍后重试 (${e.response?.statusCode})';
       final data = e.response?.data;
       if (data is Map<String, dynamic> && data.containsKey('msg')) {
         msg = data['msg'].toString();

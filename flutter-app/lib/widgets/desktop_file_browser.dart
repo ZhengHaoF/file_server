@@ -843,7 +843,11 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
       label: file.name,
       selected: selected,
       button: true,
+      excludeSemantics: true,
       onTap: () => _select(index),
+      customSemanticsActions: {
+        const CustomSemanticsAction(label: '打开'): () => widget.onOpen(file),
+      },
       child: Listener(
         onPointerDown: (event) {
           if (event.buttons == kPrimaryMouseButton) _select(index);

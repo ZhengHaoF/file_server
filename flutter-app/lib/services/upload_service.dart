@@ -13,7 +13,7 @@ class UploadService extends ChangeNotifier {
   factory UploadService() => _instance;
   UploadService._internal();
 
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(BaseOptions(followRedirects: false));
   final List<AppUploadTask> _tasks = [];
   final Map<String, CancelToken> _cancelTokens = {};
   bool _initialized = false;
@@ -21,15 +21,19 @@ class UploadService extends ChangeNotifier {
 
   List<AppUploadTask> get tasks => List.unmodifiable(_tasks);
 
-  bool get hasActiveTasks =>
-      _tasks.any((t) =>
-          t.status == AppUploadStatus.uploading ||
-          t.status == AppUploadStatus.enqueued);
+  bool get hasActiveTasks => _tasks.any(
+    (t) =>
+        t.status == AppUploadStatus.uploading ||
+        t.status == AppUploadStatus.enqueued,
+  );
 
-  int get activeCount =>
-      _tasks.where((t) =>
-          t.status == AppUploadStatus.uploading ||
-          t.status == AppUploadStatus.enqueued).length;
+  int get activeCount => _tasks
+      .where(
+        (t) =>
+            t.status == AppUploadStatus.uploading ||
+            t.status == AppUploadStatus.enqueued,
+      )
+      .length;
 
   Future<void> init() async {
     if (_initialized) return;
@@ -46,7 +50,7 @@ class UploadService extends ChangeNotifier {
       if (_tasks.length >= _kMaxUploadTasks) {
         _tasks.removeWhere((t) => t.status.isTerminal);
         if (_tasks.length >= _kMaxUploadTasks) {
-          _tasks.removeRange(0, _tasks.length - _kMaxUploadTasks + 1);
+          throw StateError('上传队列已满，请先完成或取消现有任务');
         }
       }
 
@@ -101,6 +105,11 @@ class UploadService extends ChangeNotifier {
       await _dio.post(
         '${ApiService().serverBaseUrl}/upload',
         data: formData,
+        options: Options(
+          headers: ApiService().authHeadersFor(
+            '${ApiService().serverBaseUrl}/upload',
+          ),
+        ),
         cancelToken: cancelToken,
         onSendProgress: (sent, total) {
           if (total > 0) {

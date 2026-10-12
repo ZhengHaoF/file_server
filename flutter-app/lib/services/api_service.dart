@@ -9,35 +9,97 @@ class ApiService {
 
   late final Dio _dio;
   late String _serverBaseUrl;
+  String? _sessionToken;
+  String? _readTicket;
+  int _ticketExpiresAt = 0;
+  bool get isLoggedIn => _sessionToken != null;
 
   ApiService._internal() {
     _serverBaseUrl = StorageService().serverBaseUrl;
-    _dio = Dio(BaseOptions(
-      connectTimeout: const Duration(seconds: 10),
-      receiveTimeout: const Duration(seconds: 10),
-    ));
+    _dio = Dio(
+      BaseOptions(
+        followRedirects: false,
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ),
+    );
     _dio.interceptors.add(_NetworkLogInterceptor(NetworkLogService()));
   }
 
   void setServerUrl(String url) {
+    if (url != _serverBaseUrl) {
+      _sessionToken = null;
+      _readTicket = null;
+      _ticketExpiresAt = 0;
+      _dio.options.headers.remove('Authorization');
+    }
     _serverBaseUrl = url;
     StorageService().serverBaseUrl = url;
   }
 
   String get serverBaseUrl => _serverBaseUrl;
 
+  Future<void> login(String token) async {
+    final response = await _dio.post(
+      '$_serverBaseUrl/api/auth/login',
+      data: {'token': token},
+    );
+    _checkResponse(response);
+    _sessionToken = response.data['sessionToken'] as String;
+    _readTicket = response.data['readTicket'] as String;
+    _ticketExpiresAt = (response.data['ticketExpiresAt'] as num).toInt();
+    _dio.options.headers['Authorization'] = 'Bearer $_sessionToken';
+  }
+
+  Map<String, String> authHeadersFor(String url) {
+    if (_sessionToken == null ||
+        Uri.parse(url).origin != Uri.parse(_serverBaseUrl).origin) {
+      return {};
+    }
+    return {'Authorization': 'Bearer $_sessionToken'};
+  }
+
+  Future<void> _ensureTicket() async {
+    if (_sessionToken == null ||
+        _ticketExpiresAt > DateTime.now().millisecondsSinceEpoch + 60000) {
+      return;
+    }
+    final response = await _dio.post('$_serverBaseUrl/api/auth/ticket');
+    _readTicket = response.data['readTicket'] as String;
+    _ticketExpiresAt = (response.data['ticketExpiresAt'] as num).toInt();
+  }
+
+  String _withTicket(String url) {
+    if (_readTicket == null) return url;
+    return Uri.parse(
+      url,
+    ).replace(queryParameters: {'ticket': _readTicket!}).toString();
+  }
+
+  static String imagePreviewUrl(String url, int size) {
+    final uri = Uri.parse(url);
+    final bounded = size.clamp(1, 4000);
+    return uri.replace(path: '${uri.path}!${bounded}x$bounded').toString();
+  }
+
   String getFileUrl(String filePath, String fileName) {
-    final cleanPath = filePath.isNotEmpty ? '/$filePath' : '';
-    return '$_serverBaseUrl/getFile$cleanPath/${Uri.encodeComponent(fileName)}';
+    final encoded = [
+      ...filePath.split('/').where((s) => s.isNotEmpty),
+      fileName,
+    ].map(Uri.encodeComponent).join('/');
+    return _withTicket('$_serverBaseUrl/getFile/$encoded');
   }
 
   String getVideoPreviewUrl(String filePath) {
-    return '$_serverBaseUrl/getVideoPreview/$filePath';
+    final encoded = filePath.split('/').map(Uri.encodeComponent).join('/');
+    return _withTicket('$_serverBaseUrl/getVideoPreview/$encoded');
   }
 
   /// 统一检查响应状态码，非 2xx 时从 response body 提取 msg 抛出异常
   void _checkResponse(Response response) {
-    if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
+    if (response.statusCode != null &&
+        response.statusCode! >= 200 &&
+        response.statusCode! < 300) {
       return;
     }
     String msg = '请求失败 (${response.statusCode})';
@@ -50,25 +112,33 @@ class ApiService {
 
   Future<List<FileInfo>> getFileList(String currentPath) async {
     try {
-      final response = await _dio.get(
-        '$_serverBaseUrl/list/${Uri.encodeComponent(currentPath)}',
-      );
-
-      _checkResponse(response);
-
-      final data = response.data;
-      final list = data['list'] as List<dynamic>?;
-
-      if (list == null) return [];
-
+      await _ensureTicket();
+      final list = <dynamic>[];
+      var start = 0;
+      while (true) {
+        final response = await _dio.get(
+          '$_serverBaseUrl/list/${Uri.encodeComponent(currentPath.isEmpty ? r'$' : currentPath)}',
+          queryParameters: {'sta': start, 'end': start + 500},
+        );
+        _checkResponse(response);
+        list.addAll(response.data['list'] as List<dynamic>);
+        final next = response.data['nextStart'];
+        if (next == null) break;
+        if (next is! int || next <= start) throw Exception('分页响应无效');
+        start = next;
+      }
       return list.map((item) {
         return FileInfo.fromJson(
           item as Map<String, dynamic>,
           currentPath,
           _serverBaseUrl,
+          readTicket: _readTicket,
         );
       }).toList();
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw Exception('请在设置中登录文件服务');
+      }
       if (e.response?.statusCode == 404) {
         rethrow;
       }
@@ -136,7 +206,13 @@ class _NetworkLogInterceptor extends Interceptor {
 
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    _record(response.requestOptions, statusCode: response.statusCode, statusMessage: response.statusMessage, responseHeaders: response.headers.map, responseBody: response.data);
+    _record(
+      response.requestOptions,
+      statusCode: response.statusCode,
+      statusMessage: response.statusMessage,
+      responseHeaders: response.headers.map,
+      responseBody: response.data,
+    );
     handler.next(response);
   }
 
@@ -166,19 +242,47 @@ class _NetworkLogInterceptor extends Interceptor {
         ? 0
         : DateTime.now().difference(start).inMilliseconds;
 
-    _logService.addLog(NetworkLogEntry(
-      timestamp: start ?? DateTime.now(),
-      method: options.method,
-      url: options.uri.toString(),
-      requestHeaders: options.headers,
-      requestBody: options.data,
-      statusCode: statusCode,
-      statusMessage: statusMessage,
-      responseHeaders: responseHeaders?.map((k, v) => MapEntry(k, v.join(','))),
-      responseBody: responseBody,
-      error: error,
-      durationMs: duration,
-      isRequestError: error != null,
-    ));
+    _logService.addLog(
+      NetworkLogEntry(
+        timestamp: start ?? DateTime.now(),
+        method: options.method,
+        url: options.uri
+            .replace(
+              queryParameters: {
+                for (final entry in options.uri.queryParameters.entries)
+                  entry.key: entry.key == 'ticket' ? '******' : entry.value,
+              },
+            )
+            .toString(),
+        requestHeaders: _redact(options.headers),
+        requestBody: _redact(options.data),
+        statusCode: statusCode,
+        statusMessage: statusMessage,
+        responseHeaders:
+            _redact(responseHeaders?.map((k, v) => MapEntry(k, v.join(','))))
+                as Map<String, dynamic>?,
+        responseBody: _redact(responseBody),
+        error: error,
+        durationMs: duration,
+        isRequestError: error != null,
+      ),
+    );
+  }
+
+  static dynamic _redact(dynamic value) {
+    if (value is Map) {
+      return <String, dynamic>{
+        for (final entry in value.entries)
+          entry.key.toString():
+              RegExp(
+                r'authorization|cookie|token|ticket|pwd|password',
+                caseSensitive: false,
+              ).hasMatch(entry.key.toString())
+              ? '******'
+              : _redact(entry.value),
+      };
+    }
+    if (value is List) return value.map(_redact).toList();
+    return value;
   }
 }

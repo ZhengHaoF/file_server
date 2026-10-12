@@ -1,9 +1,17 @@
 <template>
-  <div class="box">
+  <div class="box" ref="gridBox">
+    <RecycleScroller
+      class="grid-scroller"
+      :items="gridRows"
+      :item-size="rowHeight"
+      :buffer="rowHeight * 2"
+      key-field="id"
+      v-slot="{ item: row }"
+    >
     <van-grid :column-num="columns"  class="image-grid" :border="false">
       <van-grid-item 
           style="padding: 2px;"
-          v-for="(data, index) in getShowTableData" 
+          v-for="data in row.files"
           :key="data.index"
           @click="clickFile(data.index)"
           @touchstart="startLongPress(data.index)"
@@ -18,6 +26,7 @@
               theme="filled"
               :fill="themeColor"
               :stroke-width="1"
+              :style="{height: `${Math.max(48, rowHeight - 52)}px`}"
               :show-video-thumbnail="videoThumbnail"
               :show-image-preview="determineFileType(data.suffix) === 'IMG' || (determineFileType(data.suffix) === 'VIDEO' && videoThumbnail)"
               :image-src="getImageSrc(data)"
@@ -30,6 +39,7 @@
         </div>
       </van-grid-item>
     </van-grid>
+    </RecycleScroller>
     <div v-if="getShowTableData.length === 0" style="text-align: center;position: absolute;width: 100vw;height: 100vh;top: 0;left: 0;line-height: 100vh">
       当前数据为空
     </div>
@@ -41,6 +51,10 @@ import {determineFileType} from "@/tools/tools";
 import {Grid, GridItem, Image} from 'vant';
 import {useLongPress} from '@/composables/useLongPress';
 import FileIcon from './FileIcon.vue';
+import {previewUrl, withTicket} from '@/tools/fileApi';
+import {useElementSize} from '@vueuse/core';
+import {RecycleScroller} from 'vue-virtual-scroller';
+import 'vue-virtual-scroller/dist/vue-virtual-scroller.css';
 
 const show = ref(false);
 const showTableData = ref([]);
@@ -88,7 +102,7 @@ const props = defineProps({
 
 const getVideoPreviewUrl = (data) => {
   if (!props.serverBaseUrl || !data.path) return '';
-  return `${props.serverBaseUrl}/getVideoPreview/${data.path}`;
+  return withTicket(`${props.serverBaseUrl}/getVideoPreview/${data.path.split('/').filter(Boolean).map(encodeURIComponent).join('/')}`, props.serverBaseUrl);
 }
 
 const getImageSrc = (data) => {
@@ -96,12 +110,23 @@ const getImageSrc = (data) => {
     return getVideoPreviewUrl(data);
   }
   if (determineFileType(data.suffix) === 'IMG') {
-    return data.url + `!${props.imgSize}x${props.imgSize}`;
+    return previewUrl(data.url, props.imgSize);
   }
   return '';
 }
 
 const key = ref(0);
+const gridBox = ref(null);
+const {width: gridWidth} = useElementSize(gridBox);
+const rowHeight = computed(() => Math.max(100, Math.ceil((gridWidth.value - 20) / props.columns) + 52));
+const gridRows = computed(() => {
+  const rows = [];
+  const files = getShowTableData.value;
+  for (let index = 0; index < files.length; index += props.columns) {
+    rows.push({id: index, files: files.slice(index, index + props.columns)});
+  }
+  return rows;
+});
 
 onMounted(() => {
   showTableData.value = props.tableData.slice(0, props.showMax);
@@ -126,7 +151,6 @@ const getShowTableData = computed(() => {
     }
   })
 
-  key.value++;
   return list;
 })
 
@@ -148,6 +172,13 @@ watch(() => props.tableData, () => {
 <style lang="scss" scoped>
 .box {
   padding: 10px;
+  box-sizing: border-box;
+  height: 100%;
+}
+
+.grid-scroller {
+  height: 100%;
+  overflow-y: auto;
 }
 
 .image-grid {

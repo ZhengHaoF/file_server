@@ -109,6 +109,7 @@
                 <input class="server-url-input" v-model="serverBaseUrl" placeholder="服务器地址" />
               </template>
             </van-cell>
+            <van-cell title="登录文件服务" is-link @click="loginVisible = true" />
             <van-cell title="预览图像素">
               <template #value>
                 <van-stepper v-model="imgSize" min="50" max="5000" />
@@ -175,7 +176,7 @@
             <van-cell title="重启服务器">
               <template #value>
                 <div class="restart-server">
-                  <input type="number" class="PxInput" v-model="restartTheServerPwd" placeholder="密码" />
+                  <input type="password" class="PxInput" v-model="restartTheServerPwd" placeholder="管理令牌" autocomplete="off" />
                   <van-button size="small" type="danger" @click="restartTheServer">重启</van-button>
                 </div>
               </template>
@@ -238,6 +239,16 @@
         </div>
       </div>
     </Transition>
+    <van-dialog
+      v-model:show="loginVisible"
+      title="登录文件服务"
+      show-cancel-button
+      confirm-button-text="登录"
+      :before-close="loginBeforeClose"
+    >
+      <van-field v-model="loginToken" type="password" label="访问令牌" placeholder="输入服务端访问令牌" autocomplete="off" />
+      <p style="padding: 0 20px; color: #666; font-size: 13px;">令牌仅用于换取临时会话，不会保存到浏览器存储。</p>
+    </van-dialog>
     <input
       ref="uploadInputRef"
       class="upload-input"
@@ -250,7 +261,7 @@
 <script setup>
 import {AllApplication, ListBottom, SettingTwo, Upload as UploadIcon} from "@icon-park/vue-next";
 import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue";
-import axios from "axios";
+import {fileApi as axios, authenticate, ensureTicket, fileUrl, previewUrl} from "@/tools/fileApi";
 import {onBeforeRouteUpdate, useRoute, useRouter} from "vue-router";
 import {showImagePreview, showLoadingToast, showToast} from 'vant';
 import ImageTable from "@/components/ImageTable.vue";
@@ -432,6 +443,20 @@ const getDefaultServerUrl = () => {
 };
 const serverBaseUrl = ref(localStorage.getItem('serverBaseUrl') || getDefaultServerUrl());
 const tableData = ref([]);
+const loginVisible = ref(false);
+const loginToken = ref('');
+const loginBeforeClose = async (action) => {
+  if (action !== 'confirm') { loginToken.value = ''; return true; }
+  try {
+    await authenticate(serverBaseUrl.value, loginToken.value);
+    loginToken.value = '';
+    await getFileList();
+    return true;
+  } catch (error) {
+    showToast(error.response?.data?.msg || '登录失败，请检查网络和令牌');
+    return false;
+  }
+};
 const getTableDate = computed(()=>{
   let newTableDate = [];
   switch (fileSore.value) {
@@ -457,29 +482,9 @@ const getTableDate = computed(()=>{
       newTableDate = tableData.value;
   }
 
-  let newTableDate2 = [];
-  switch (folderSort.value) {
-    case "start":
-      newTableDate.forEach((item)=>{
-        if(item.isFile){
-          newTableDate2.push(item)
-        }else{
-          newTableDate2.unshift(item)
-        }
-      })
-      break;
-    case "end":
-      newTableDate.forEach((item)=>{
-        if(item.isFile){
-          newTableDate2.unshift(item)
-        }else{
-          newTableDate2.push(item)
-        }
-      })
-      break;
-    default:
-      newTableDate2 = newTableDate.value;
-  }
+  const folders = newTableDate.filter(item => item.isDirectory);
+  const files = newTableDate.filter(item => !item.isDirectory);
+  const newTableDate2 = folderSort.value === 'end' ? [...files, ...folders] : [...folders, ...files];
   return newTableDate2;
 })
 const tableHeader = ref([
@@ -576,13 +581,12 @@ const showImg = () => {
       if (viewOriginalImage.value) {
         return getFileUrl(currentPath.value, item.name);
       } else {
-        return getFileUrl(currentPath.value, item.name) + `!${w}x${w}`;
+        return previewUrl(getFileUrl(currentPath.value, item.name), Number(w));
       }
     });
 
-  const currentIndex = imageList.findIndex(
-    url => url.includes(currentFile.name)
-  );
+  const currentIndex = getTableDate.value.filter(item => isImg(item.suffix))
+    .findIndex(item => item.name === currentFile.name);
 
   showImagePreview({
     images: imageList,
@@ -593,12 +597,11 @@ const showImg = () => {
 }
 
 const getFileUrl = (filePath, fileName) => {
-  const cleanPath = filePath ? `/${filePath}` : '';
-  return `${serverBaseUrl.value}/getFile${cleanPath}/${window.encodeURIComponent(fileName)}`;
+  return fileUrl(serverBaseUrl.value, filePath, fileName);
 }
 
 const getFilePath = (filePath, fileName) => {
-  return `${filePath}/${fileName}`;
+  return filePath ? `${filePath}/${fileName}` : fileName;
 }
 
 const copyUrl = (index) => {
@@ -683,20 +686,8 @@ const uploadInputRef = ref(null);
 // 本次要上传到的目录（相对 rootPath，已解码，用 / 分隔）
 const uploadDestPath = ref('');
 
-// currentPath 的各段是 URL 编码过的，而后端 /upload 的 destPath 要解码后的相对路径
-const decodeCurrentPath = () => {
-  return (currentPath.value || '')
-    .split('/')
-    .filter(Boolean)
-    .map((segment) => {
-      try {
-        return decodeURIComponent(segment);
-      } catch (e) {
-        return segment;
-      }
-    })
-    .join('/');
-};
+// Paths remain literal internally and are encoded exactly once at the URL boundary.
+const decodeCurrentPath = () => currentPath.value || '';
 
 // targetFolder 为空表示上传到当前目录，否则为当前目录下的某个文件夹
 const openUploadPicker = (targetFolder) => {
@@ -876,17 +867,26 @@ const copyCurrentUrl = () => {
     showToast('复制失败，请手动复制');
   }
 }
-const getFileList = () => {
-  return new Promise(resolve => {
+let listRequestId = 0;
+const getFileList = async () => {
+    const requestId = ++listRequestId;
+    const requestedPath = currentPath.value;
     showLoading.value = true;
-    axios.get(`${serverBaseUrl.value}/list/${window.encodeURIComponent(currentPath.value)}`).then((res, err) => {
-      showLoading.value = false;
-      if (res.status === 200) {
-        let data = res?.data?.list;
-        if (!data) {
-          console.log("格式不匹配")
-          return;
-        }
+    try {
+        await ensureTicket(serverBaseUrl.value);
+        const data = [];
+        let start = 0;
+        do {
+          const res = await axios.get(`${serverBaseUrl.value}/list/${encodeURIComponent(requestedPath || '$')}`,
+            { params: { sta: start, end: start + 500 } });
+          if (!Array.isArray(res.data?.list)) throw new Error('文件列表格式不匹配');
+          data.push(...res.data.list);
+          const next = res.data.nextStart;
+          if (next == null) break;
+          if (!Number.isInteger(next) || next <= start) throw new Error('分页响应无效');
+          start = next;
+        } while (true);
+        if (requestId !== listRequestId) return;
         tableData.value = data.map((item) => {
           item['sizeRow'] = Number(item['size']);
           item['size'] = (Number(item['size']) / 1024 / 1024).toFixed(2) + "MB";
@@ -898,17 +898,14 @@ const getFileList = () => {
           }
           return item;
         })
-        resolve();
-      }
-    }).catch((err) => {
-      showLoading.value = false;
-      if (err.response.status === 404) {
-        console.log(err.response.data);
-        goToRoot();
-      }
-      resolve();
-    })
-  })
+    } catch (err) {
+      if (requestId !== listRequestId) return;
+      if (err.response?.status === 401) loginVisible.value = true;
+      else if (err.response?.status === 404 && requestedPath) goToRoot();
+      else showToast(err.response?.data?.msg || '文件列表加载失败，请检查网络');
+    } finally {
+      if (requestId === listRequestId) showLoading.value = false;
+    }
 }
 const backChange = (event) => {
   if(event && event.preventDefault){
@@ -929,12 +926,10 @@ const backChange = (event) => {
   }
 }
 
-onBeforeRouteUpdate((to, from, next)=>{
-  console.log(to,from)
-  next((vm)=>{
-    getFileList();
-  })
-})
+watch(() => route.params.path, () => {
+  initializePath();
+  getFileList();
+});
 const model = ref("list")
 //切换图片/列表模式
 const changeMode = () => {

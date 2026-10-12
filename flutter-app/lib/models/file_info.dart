@@ -21,7 +21,12 @@ class FileInfo {
     this.path,
   });
 
-  factory FileInfo.fromJson(Map<String, dynamic> json, String currentPath, String serverBaseUrl) {
+  factory FileInfo.fromJson(
+    Map<String, dynamic> json,
+    String currentPath,
+    String serverBaseUrl, {
+    String? readTicket,
+  }) {
     final name = json['name'] ?? '';
     final isDirectory = json['isDirectory'] ?? false;
     final sizeValue = (json['size'] as num?)?.toInt() ?? 0;
@@ -39,8 +44,16 @@ class FileInfo {
     String? fileUrl;
     final filePath = currentPath.isNotEmpty ? '$currentPath/$name' : name;
     if (!isDirectory) {
-      final cleanPath = currentPath.isNotEmpty ? '/$currentPath' : '';
-      fileUrl = '$serverBaseUrl/getFile$cleanPath/${Uri.encodeComponent(name)}';
+      final encodedPath = filePath
+          .split('/')
+          .map(Uri.encodeComponent)
+          .join('/');
+      fileUrl = '$serverBaseUrl/getFile/$encodedPath';
+      if (readTicket != null && readTicket.isNotEmpty) {
+        fileUrl = Uri.parse(
+          fileUrl,
+        ).replace(queryParameters: {'ticket': readTicket}).toString();
+      }
     }
 
     return FileInfo(

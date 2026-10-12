@@ -48,8 +48,8 @@ adminRouter.get('/status', async (req, res) => {
         const server = {
             uptime: Math.floor(process.uptime()),
             nodeVersion: process.version,
-            httpPort: 3000,
-            httpsPort: 3001,
+            httpPort: config.port,
+            httpsPort: config.httpsPort,
             httpStatus: serverStatus.http,
             httpsStatus: serverStatus.https
         };
@@ -70,15 +70,15 @@ adminRouter.get('/status', async (req, res) => {
  * GET /api/admin/cache/stats
  * 获取缓存统计信息
  */
-adminRouter.get('/cache/stats', (req, res) => {
+adminRouter.get('/cache/stats', async (req, res) => {
     try {
         const config = req.adminConfig;
         const cachePath = config.imgCache || './imgCache';
 
-        const stats = getCacheStats(cachePath);
+        const stats = await getCacheStats(cachePath);
 
         // 获取数据库大小
-        const dbInfo = getDatabaseInfo('./imgCache.db');
+        const dbInfo = getDatabaseInfo(config.dbPath);
         stats.dbSize = dbInfo.dbSize;
 
         res.json(stats);
@@ -98,22 +98,22 @@ adminRouter.post('/cache/clean', async (req, res) => {
         const cachePath = config.imgCache || './imgCache';
         const { days, all } = req.body;
 
-        if (!days && !all) {
+        if (all !== true && (!Number.isInteger(days) || days < 1 || days > 3650)) {
             return res.status(400).json({ msg: '请指定清理天数或设置 all: true' });
         }
 
         // 清理文件系统缓存
-        const result = await cleanCache(cachePath, all ? null : days);
-
-        // 清理数据库记录（使用单例，不创建新连接）
-        const sql = getSqlInstance();
-        if (all) {
+        const sql = req.adminSql || getSqlInstance();
+        let cleaned;
+        if (all === true) {
+            const result = await cleanCache(cachePath, null);
+            cleaned = result.cleaned;
             sql.reset();
-        } else if (days) {
-            await sql.cleanOldData(days);
+        } else {
+            cleaned = await sql.cleanOldData(days);
         }
 
-        res.json(result);
+        res.json({ msg: '缓存清理成功', cleaned });
     } catch (err) {
         console.error('清理缓存失败:', err.message);
         res.status(500).json({ msg: '清理缓存失败' });
@@ -130,7 +130,7 @@ adminRouter.get('/logs', async (req, res) => {
 
         const logs = await readLogs({
             level,
-            limit: parseInt(limit) || 100,
+            limit: Math.max(1, Math.min(parseInt(limit) || 100, 1000)),
             keyword
         });
 
@@ -185,12 +185,12 @@ adminRouter.post('/restart', (req, res) => {
  */
 adminRouter.get('/database/status', async (req, res) => {
     try {
-        const sql = getSqlInstance();
+        const sql = req.adminSql || getSqlInstance();
         const recordCount = sql.getCount();
-        const dbInfo = getDatabaseInfo('./imgCache.db');
+        const dbInfo = getDatabaseInfo(req.adminConfig.dbPath);
 
         res.json({
-            dbPath: './imgCache.db',
+            dbPath: req.adminConfig.dbPath,
             dbSize: dbInfo.dbSize,
             recordCount,
             tables: ['image']

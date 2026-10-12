@@ -66,12 +66,16 @@ class _SettingsPageState extends State<SettingsPage> {
     _storage.serverBaseUrl = _serverBaseUrl;
     _apiService.setServerUrl(_serverBaseUrl);
 
-    final colorHex = _themeColor.toARGB32().toRadixString(16).substring(2).toUpperCase();
+    final colorHex = _themeColor
+        .toARGB32()
+        .toRadixString(16)
+        .substring(2)
+        .toUpperCase();
     _storage.themeColor = '#$colorHex';
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('设置已保存')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('设置已保存')));
 
     Navigator.pop(context);
   }
@@ -122,6 +126,55 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  Future<void> _showLoginDialog() async {
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('登录文件服务'),
+        content: TextField(
+          controller: controller,
+          obscureText: true,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: '访问令牌',
+            helperText: '不会保存原始令牌，重启应用后需重新登录',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              try {
+                await _apiService.login(controller.text.trim());
+                if (dialogContext.mounted) {
+                  controller.clear();
+                  Navigator.pop(dialogContext);
+                }
+                if (mounted) {
+                  setState(() {});
+                }
+              } catch (_) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('登录失败，请检查服务器和令牌')),
+                  );
+                }
+              }
+            },
+            child: const Text('登录'),
+          ),
+        ],
+      ),
+    );
+    // The dialog exit animation may still reference its controller.
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    controller.dispose();
+  }
+
   void _restoreDefaults() async {
     await _storage.clear();
     if (mounted) {
@@ -143,34 +196,36 @@ class _SettingsPageState extends State<SettingsPage> {
           _themeColor = const Color(0xFFf6823b);
         }
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已恢复默认设置')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已恢复默认设置')));
     }
   }
 
   void _restartServer() async {
     final pwd = _restartPwdController.text;
     if (pwd.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请输入密码')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('请输入密码')));
       return;
     }
 
     try {
       final result = await _apiService.restartServer(pwd);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['msg'] ?? '操作完成')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(result['msg'] ?? '操作完成')));
       }
     } catch (e) {
       if (mounted) {
-        final msg = e is Exception ? e.toString().replaceFirst('Exception: ', '') : e.toString();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(msg)),
-        );
+        final msg = e is Exception
+            ? e.toString().replaceFirst('Exception: ', '')
+            : e.toString();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(msg)));
       }
     }
   }
@@ -217,6 +272,12 @@ class _SettingsPageState extends State<SettingsPage> {
             title: '服务设置',
             children: [
               ListTile(
+                title: const Text('登录文件服务'),
+                subtitle: Text(_apiService.isLoggedIn ? '已登录' : '输入访问令牌以浏览文件'),
+                trailing: const Icon(Icons.lock_outline),
+                onTap: _showLoginDialog,
+              ),
+              ListTile(
                 title: const Text('服务器地址'),
                 subtitle: Text(
                   _serverBaseUrl,
@@ -250,11 +311,7 @@ class _SettingsPageState extends State<SettingsPage> {
               _buildDropdownTile(
                 title: '视频打开方式',
                 value: _playMode,
-                items: const {
-                  'ask': '每次询问',
-                  'vlc': 'VLC播放',
-                  'html': '本地播放器',
-                },
+                items: const {'ask': '每次询问', 'vlc': 'VLC播放', 'html': '本地播放器'},
                 onChanged: (v) => setState(() => _playMode = v!),
               ),
               _buildDropdownTile(
@@ -273,10 +330,7 @@ class _SettingsPageState extends State<SettingsPage> {
               _buildDropdownTile(
                 title: '文件夹位置',
                 value: _folderSort,
-                items: const {
-                  'start': '最前',
-                  'end': '最后',
-                },
+                items: const {'start': '最前', 'end': '最后'},
                 onChanged: (v) => setState(() => _folderSort = v!),
               ),
               _buildSwitchTile(
@@ -312,7 +366,10 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildSection({required String title, required List<Widget> children}) {
+  Widget _buildSection({
+    required String title,
+    required List<Widget> children,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -360,9 +417,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     controller: controller,
                     autofocus: true,
                     keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      hintText: '$min - $max',
-                    ),
+                    decoration: InputDecoration(hintText: '$min - $max'),
                   ),
                   actions: [
                     TextButton(
@@ -464,7 +519,10 @@ class _SettingsPageState extends State<SettingsPage> {
                 decoration: const InputDecoration(
                   hintText: '密码',
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
                 ),
                 obscureText: true,
               ),

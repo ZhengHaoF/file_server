@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/download_task.dart';
+import 'api_service.dart';
 
 const _kTasksKey = 'download_tasks';
 const _kMaxTasks = 200;
@@ -18,18 +19,49 @@ class DownloadService extends ChangeNotifier {
   factory DownloadService() => _instance;
   DownloadService._internal();
 
-  final Dio _dio = Dio();
+  final Dio _dio = Dio(BaseOptions(followRedirects: false));
   final List<AppDownloadTask> _tasks = [];
   final Map<String, CancelToken> _cancelTokens = {};
   bool _initialized = false;
   String _tempDir = '';
+  final Set<String> _reservedPaths = {};
+
+  Future<String> _reserveSavePath(String fileName) async {
+    final original = await _resolveSavePath(fileName);
+    final dot = original.lastIndexOf('.');
+    final slash = original.lastIndexOf('/');
+    final stem = dot > slash ? original.substring(0, dot) : original;
+    final extension = dot > slash ? original.substring(dot) : '';
+    var counter = 0;
+    while (true) {
+      final candidate = counter == 0 ? original : '$stem ($counter)$extension';
+      counter++;
+      if (_reservedPaths.contains(candidate)) continue;
+      _reservedPaths.add(candidate);
+      if (!await File(candidate).exists()) return candidate;
+      _reservedPaths.remove(candidate);
+    }
+  }
+
+  void _runQueue() {
+    while (_cancelTokens.length < 3) {
+      final pending = _tasks.where(
+        (task) => task.status == AppDownloadStatus.enqueued,
+      );
+      if (pending.isEmpty) return;
+      _executeDownload(pending.first).whenComplete(_runQueue);
+    }
+  }
 
   List<AppDownloadTask> get tasks => List.unmodifiable(_tasks);
 
-  int get activeCount =>
-      _tasks.where((t) =>
-          t.status == AppDownloadStatus.downloading ||
-          t.status == AppDownloadStatus.enqueued).length;
+  int get activeCount => _tasks
+      .where(
+        (t) =>
+            t.status == AppDownloadStatus.downloading ||
+            t.status == AppDownloadStatus.enqueued,
+      )
+      .length;
 
   Future<void> init() async {
     if (_initialized) return;
@@ -57,8 +89,9 @@ class DownloadService extends ChangeNotifier {
       if (_androidVersion >= 10) {
         return '$_tempDir/$fileName';
       }
-      final result =
-          await _kChannel.invokeMethod<String>('getExternalDownloads');
+      final result = await _kChannel.invokeMethod<String>(
+        'getExternalDownloads',
+      );
       if (result != null) {
         final dir = Directory('$result/Z-Files');
         if (!await dir.exists()) {
@@ -89,8 +122,12 @@ class DownloadService extends ChangeNotifier {
     return '$_tempDir/$fileName';
   }
 
-  Future<void> startDownload(String url, String fileName, String filePath,
-      {int fileSize = 0}) async {
+  Future<void> startDownload(
+    String url,
+    String fileName,
+    String filePath, {
+    int fileSize = 0,
+  }) async {
     // 检查是否已在下载列表中
     final exists = _tasks.any((t) => t.url == url && !t.status.isTerminal);
     if (exists) return;
@@ -99,12 +136,12 @@ class DownloadService extends ChangeNotifier {
     if (_tasks.length >= _kMaxTasks) {
       _tasks.removeWhere((t) => t.status.isTerminal);
       if (_tasks.length >= _kMaxTasks) {
-        _tasks.removeRange(0, _tasks.length - _kMaxTasks + 1);
+        throw StateError('下载队列已满，请先完成或取消现有任务');
       }
     }
 
     final taskId = DateTime.now().microsecondsSinceEpoch.toString();
-    final savePath = await _resolveSavePath(fileName);
+    final savePath = await _reserveSavePath(fileName);
 
     final task = AppDownloadTask(
       id: taskId,
@@ -120,7 +157,7 @@ class DownloadService extends ChangeNotifier {
     notifyListeners();
 
     // 异步执行下载，不阻塞调用方
-    _executeDownload(task);
+    _runQueue();
   }
 
   Future<void> _executeDownload(AppDownloadTask task) async {
@@ -134,6 +171,7 @@ class DownloadService extends ChangeNotifier {
       await _dio.download(
         task.url,
         task.savePath,
+        options: Options(headers: ApiService().authHeadersFor(task.url)),
         cancelToken: cancelToken,
         onReceiveProgress: (received, total) {
           if (total > 0) {
@@ -162,7 +200,6 @@ class DownloadService extends ChangeNotifier {
 
       task.status = AppDownloadStatus.failed;
       debugPrint('下载失败 [${e.type}]: ${e.message}');
-      debugPrint('  URL: ${task.url}');
       debugPrint('  状态码: ${e.response?.statusCode}');
       debugPrint('  响应: ${e.response?.data}');
     } catch (e) {
@@ -170,10 +207,10 @@ class DownloadService extends ChangeNotifier {
 
       task.status = AppDownloadStatus.failed;
       debugPrint('下载失败: $e');
-      debugPrint('  URL: ${task.url}');
       debugPrint('  保存路径: ${task.savePath}');
     } finally {
       _cancelTokens.remove(task.id);
+      _reservedPaths.remove(task.savePath);
       _saveTasks();
       notifyListeners();
     }
@@ -210,6 +247,7 @@ class DownloadService extends ChangeNotifier {
     if (index == -1) return;
 
     _tasks[index].status = AppDownloadStatus.canceled;
+    if (cancelToken == null) _reservedPaths.remove(_tasks[index].savePath);
     _saveTasks();
     notifyListeners();
   }
@@ -231,7 +269,7 @@ class DownloadService extends ChangeNotifier {
     _saveTasks();
     notifyListeners();
 
-    _executeDownload(task);
+    _runQueue();
   }
 
   /// 移除任务记录，可选删除磁盘文件

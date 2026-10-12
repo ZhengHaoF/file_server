@@ -65,6 +65,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { getStatus } from '../api/status.js'
+import axios from 'axios'
 
 const router = useRouter()
 const password = ref('')
@@ -78,8 +79,10 @@ async function handleLogin() {
   error.value = ''
   
   try {
-    // 存储 token 到 localStorage
-    localStorage.setItem('adminToken', password.value)
+    localStorage.removeItem('adminToken') // Remove any historical plaintext password.
+    const response = await axios.post('/api/auth/login', { token: password.value }, { withCredentials: true })
+    password.value = ''
+    if (response.data.role !== 'admin') throw new Error('请使用管理令牌，而不是文件访问令牌')
     
     // 验证 token 是否有效
     await getStatus()

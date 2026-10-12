@@ -1,7 +1,6 @@
 export class LogWebSocket {
   constructor(options = {}) {
-    this.url = options.url || `ws://${window.location.host}/api/admin/logs/stream`
-    this.token = options.token || localStorage.getItem('adminToken')
+    this.url = options.url || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/api/admin/logs/stream`
     this.onMessage = options.onMessage || (() => {})
     this.onError = options.onError || (() => {})
     this.onClose = options.onClose || (() => {})
@@ -20,7 +19,7 @@ export class LogWebSocket {
     }
 
     this.isConnecting = true
-    const wsUrl = `${this.url}?token=${encodeURIComponent(this.token)}`
+    const wsUrl = this.url
 
     try {
       this.ws = new WebSocket(wsUrl)

@@ -2,16 +2,13 @@ import axios from 'axios'
 
 const request = axios.create({
   baseURL: '/api/admin',
+  withCredentials: true,
   timeout: 10000
 })
 
 // 请求拦截器
 request.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('adminToken')
-    if (token) {
-      config.headers['X-Admin-Token'] = token
-    }
     return config
   },
   (error) => {

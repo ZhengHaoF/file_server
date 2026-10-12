@@ -1,7 +1,13 @@
 {
-    "rootPath": "C:\\Users\\zheng\\Downloads",
+    "rootPath": "./files",
     "imgCache":"./imgCache",
-    "restartPwd":"123456",
-    "uploadEnabled": true,
-    "uploadMaxSizeMB": 4096
+    "restartPwd":"",
+    "accessToken":"",
+    "publicRead": false,
+    "writeEnabled": false,
+    "uploadEnabled": false,
+    "uploadMaxSizeMB": 4096,
+    "host": "127.0.0.1",
+    "httpsEnabled": false,
+    "allowedOrigins": []
 }

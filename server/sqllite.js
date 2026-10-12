@@ -2,9 +2,22 @@ import fs from 'fs';
 import Database from 'better-sqlite3';
 
 export class Sql {
-    constructor(config) {
+    constructor(config, dbPath = 'imgCache.db') {
         this.imgCache = config;
-        this.db = new Database('imgCache.db');
+        this.db = new Database(dbPath);
+        this.db.pragma('journal_mode = WAL');
+        this.db.pragma('busy_timeout = 5000');
+        this.ensureSchema();
+    }
+
+    ensureSchema() {
+        this.db.exec('CREATE TABLE IF NOT EXISTS image (psha256 TEXT PRIMARY KEY, ext TEXT, ctime TEXT);');
+        this.db.exec('CREATE INDEX IF NOT EXISTS image_access_time ON image(CAST(ctime AS INTEGER));');
+        this.statements = {
+            insert: this.db.prepare('INSERT OR REPLACE INTO image (psha256, ext, ctime) VALUES (?, ?, ?)'),
+            update: this.db.prepare('UPDATE image SET ctime = ? WHERE psha256 = ? AND CAST(ctime AS INTEGER) < ?'),
+            select: this.db.prepare('SELECT * FROM image WHERE psha256 = ?'),
+        };
     }
 
     /**
@@ -13,21 +26,19 @@ export class Sql {
     init(){
         this.db.exec('DROP TABLE IF EXISTS "image";');
         this.db.exec('VACUUM');
-        this.db.exec('CREATE TABLE IF NOT EXISTS "image" ("psha256" text NOT NULL,"ext" text,"ctime" text,PRIMARY KEY ("psha256"));');
+        this.ensureSchema();
         this.close();
     }
 
     /**
-     * 重置表：清空并重建，但不关闭连接（用于主进程中的缓存清理）
+     * 重置表：清空记录，但保留表、索引和连接（用于缓存清理）
      */
     reset(){
-        this.db.exec('DROP TABLE IF EXISTS "image";');
-        this.db.exec('VACUUM');
-        this.db.exec('CREATE TABLE IF NOT EXISTS "image" ("psha256" text NOT NULL,"ext" text,"ctime" text,PRIMARY KEY ("psha256"));');
+        this.db.exec('DELETE FROM image;');
     }
     insertInfo(psha256,ext) {
         try {
-            const stmt = this.db.prepare('INSERT OR REPLACE INTO "image" ("psha256","ext", "ctime") VALUES (?,?,?);');
+            const stmt = this.statements.insert;
             stmt.run(psha256, ext, String(new Date().getTime()));
         } catch (err) {
             return console.log(err);
@@ -36,8 +47,8 @@ export class Sql {
 
     updateInfo(psha256) {
         try {
-            const stmt = this.db.prepare('UPDATE "image" SET "ctime" = ? WHERE "psha256" = ?');
-            stmt.run(String(new Date().getTime()), psha256);
+            const now = Date.now();
+            this.statements.update.run(String(now), psha256, now - 60000);
         } catch (err) {
             return console.log(err);
         }
@@ -45,7 +56,7 @@ export class Sql {
 
     selectInfo(psha256) {
         try {
-            const stmt = this.db.prepare('SELECT * FROM "image" WHERE "psha256" = ?');
+            const stmt = this.statements.select;
             const row = stmt.get(psha256);
             return row;
         } catch (err) {
@@ -73,40 +84,41 @@ export class Sql {
      * @param day 过期时间，默认为30天
      */
     async cleanOldData(day = 30) {
+        if (!Number.isInteger(Number(day)) || Number(day) < 0 || Number(day) > 3650) {
+            throw new Error('清理天数必须为 0 到 3650 的整数');
+        }
         let t = day * 86400000;
         let nowTime = new Date().getTime();
         let num = 0;
-        let unlinkList = [];
 
         try {
-            const stmt = this.db.prepare('SELECT * FROM "image"');
-            const rows = stmt.all();
+            const stmt = this.db.prepare('SELECT * FROM image WHERE CAST(ctime AS INTEGER) < ? LIMIT 500');
+            let rows;
+            do {
+                const failures = new Set();
+                rows = stmt.all(nowTime - t);
 
-            rows.forEach((item) => {
-                if (nowTime - item.ctime > t) {
-                    unlinkList.push(
-                        new Promise((resolve2, reject2) => {
-                            try {
-                                const deleteStmt = this.db.prepare('DELETE FROM "image" WHERE "psha256" = ?');
-                                deleteStmt.run(item.psha256);
-                                num++;
-                            } catch (err2) {
-                                console.log(err2)
-                            }
-                            fs.unlink(`${this.imgCache}/${item.psha256}${item.ext}`, (err3) => {
-                                if (err3) {
-                                    console.error(err3);
-                                    resolve2();
-                                }
-                                console.log(`${this.imgCache}/${item.psha256}${item.ext}文件已被删除`);
-                                resolve2();
+                for (const item of rows) {
+                    if (nowTime - item.ctime > t) {
+                        // Old cache records are treated as untrusted filenames too.
+                        if (!/^[a-f0-9]{64}$/.test(item.psha256) || !/^\.[a-zA-Z0-9]+$/.test(item.ext)) {
+                            failures.add(item.psha256);
+                            continue;
+                        }
+                        try {
+                            await fs.promises.unlink(`${this.imgCache}/${item.psha256}${item.ext}`).catch(error => {
+                                if (error.code !== 'ENOENT') throw error;
                             });
-                        })
-                    )
+                            // A concurrent request may have refreshed this record.
+                            const deleted = this.db.prepare('DELETE FROM image WHERE psha256 = ? AND ctime = ?')
+                                .run(item.psha256, item.ctime);
+                            num += deleted.changes;
+                        } catch (error) { failures.add(item.psha256); }
+                    }
                 }
-            });
-
-            await Promise.all(unlinkList);
+                // Retry failed removals on the next maintenance request, not in an infinite loop.
+                if (failures.size) break;
+            } while (rows.length === 500);
 
             return num;
         } catch(err) {
@@ -127,9 +139,9 @@ let _instance = null;
  * @param {string} imgCachePath 图片缓存目录路径
  * @returns {Sql}
  */
-export function getSqlInstance(imgCachePath) {
+export function getSqlInstance(imgCachePath, dbPath) {
     if (!_instance) {
-        _instance = new Sql(imgCachePath);
+        _instance = new Sql(imgCachePath, dbPath);
     }
     return _instance;
 }

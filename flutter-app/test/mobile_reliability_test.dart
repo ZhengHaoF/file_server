@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:z_files/models/upload_task.dart';
@@ -14,8 +16,75 @@ import 'package:z_files/utils/server_address.dart';
 
 class RealHttp extends HttpOverrides {}
 
+class RecordingAdapter extends IOHttpClientAdapter {
+  RequestOptions? lastRequest;
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? stream,
+    Future<void>? cancelFuture,
+  ) {
+    lastRequest = options;
+    return super.fetch(options, stream, cancelFuture);
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  test(
+    'upload uses idle watchdog, not a 60-second total send deadline',
+    () async {
+      await HttpOverrides.runWithHttpOverrides(() async {
+        SharedPreferences.setMockInitialValues({});
+        await StorageService().init();
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        final dir = await Directory.systemTemp.createTemp('upload-idle-');
+        final release = Completer<void>();
+        addTearDown(() async {
+          if (!release.isCompleted) release.complete();
+          await server.close(force: true);
+          await dir.delete(recursive: true);
+        });
+        server.listen((req) async {
+          await req.drain<void>();
+          await release.future;
+          try {
+            req.response.headers.contentType = ContentType.json;
+            req.response.write('{}');
+            await req.response.close();
+          } catch (_) {
+            // The idle watchdog intentionally closes the client connection.
+          }
+        });
+        ApiService().setServerUrl('http://127.0.0.1:${server.port}');
+        final adapter = RecordingAdapter();
+        final service = UploadService.forTesting(
+          idleTimeout: const Duration(milliseconds: 100),
+          adapter: adapter,
+        );
+        addTearDown(() => adapter.close(force: true));
+        final local = await File('${dir.path}/a.txt').writeAsString('fixture');
+        final finished = Completer<void>();
+        service.addListener(() {
+          if (service.tasks.isNotEmpty &&
+              !service.hasActiveTasks &&
+              !finished.isCompleted) {
+            finished.complete();
+          }
+        });
+        service.startUploads([
+          (fileName: 'a.txt', localPath: local.path, fileSize: 7),
+        ], '');
+        await finished.future.timeout(const Duration(seconds: 5));
+        expect(adapter.lastRequest, isNotNull);
+        expect(adapter.lastRequest!.sendTimeout, isNull);
+        expect(service.tasks.single.status, AppUploadStatus.failed);
+        expect(service.tasks.single.errorMsg, contains('长时间无进展'));
+        release.complete();
+      }, RealHttp());
+    },
+  );
 
   test(
     'connection probe requests only one item; 503 keeps session, 401 clears it',

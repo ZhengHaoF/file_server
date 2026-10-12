@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,16 +13,35 @@ const _kMaxUploadTasks = 200;
 class UploadService extends ChangeNotifier {
   static final UploadService _instance = UploadService._internal();
   factory UploadService() => _instance;
-  UploadService._internal();
+  UploadService._internal()
+    : _idleTimeout = const Duration(minutes: 2),
+      _dio = _createClient();
 
-  final Dio _dio = Dio(
-    BaseOptions(
-      followRedirects: false,
-      connectTimeout: const Duration(seconds: 15),
-      sendTimeout: const Duration(seconds: 60),
-      receiveTimeout: const Duration(seconds: 60),
-    ),
-  );
+  @visibleForTesting
+  UploadService.forTesting({
+    required Duration idleTimeout,
+    HttpClientAdapter? adapter,
+    // Keep the public test argument name separate from the private field.
+    // ignore: prefer_initializing_formals
+  }) : _idleTimeout = idleTimeout,
+       _dio = _createClient(adapter: adapter);
+
+  static Dio _createClient({HttpClientAdapter? adapter}) {
+    final client = Dio(
+      BaseOptions(
+        followRedirects: false,
+        connectTimeout: const Duration(seconds: 15),
+        // Dio sendTimeout caps the entire body, not idle time. Progress has its
+        // own idle watchdog so slow but progressing videos remain uploadable.
+        receiveTimeout: const Duration(seconds: 60),
+      ),
+    );
+    if (adapter != null) client.httpClientAdapter = adapter;
+    return client;
+  }
+
+  final Dio _dio;
+  final Duration _idleTimeout;
   final List<AppUploadTask> _tasks = [];
   final Map<String, CancelToken> _cancelTokens = {};
   bool _initialized = false;
@@ -99,6 +120,16 @@ class UploadService extends ChangeNotifier {
     task.status = AppUploadStatus.uploading;
     task.errorMsg = null;
     notifyListeners();
+    Timer? idleTimer;
+    void resetIdleTimer() {
+      idleTimer?.cancel();
+      idleTimer = Timer(_idleTimeout, () {
+        if (cancelToken.isCancelled) return;
+        task.status = AppUploadStatus.failed;
+        task.errorMsg = '上传长时间无进展，服务器未确认完成；请核对目录后重试';
+        cancelToken.cancel(task.errorMsg);
+      });
+    }
 
     try {
       if (task.serverUrl.isEmpty ||
@@ -116,12 +147,14 @@ class UploadService extends ChangeNotifier {
         ),
       });
 
+      resetIdleTimer();
       await _dio.post(
         uploadUrl,
         data: formData,
         options: Options(headers: headers),
         cancelToken: cancelToken,
         onSendProgress: (sent, total) {
+          resetIdleTimer();
           if (total > 0) {
             task.progress = sent / total;
             notifyListeners();
@@ -145,7 +178,7 @@ class UploadService extends ChangeNotifier {
         task.errorMsg = '上传失败 (${e.response?.statusCode ?? e.message})';
       }
       debugPrint('上传失败 [${e.type}]: ${task.errorMsg}');
-      debugPrint('  URL: ${ApiService().serverBaseUrl}/upload');
+      debugPrint('  URL: ${task.serverUrl}/upload');
       debugPrint('  状态码: ${e.response?.statusCode}');
     } catch (e) {
       if (cancelToken.isCancelled) return;
@@ -155,6 +188,7 @@ class UploadService extends ChangeNotifier {
       debugPrint('上传失败: $e');
       debugPrint('  本地文件: ${task.localPath}');
     } finally {
+      idleTimer?.cancel();
       _cancelTokens.remove(task.id);
       _saveTasks();
       notifyListeners();

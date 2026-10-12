@@ -39,6 +39,7 @@ server/imgCache.db
 server/imgCache.db-*
 server/auth.local.json
 server/config.local.json
+server/admin-config*.local.json
 server/data/
 server/cert/*.local.*
 server/logs/

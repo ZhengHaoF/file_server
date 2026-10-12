@@ -12,7 +12,7 @@ test('distribution fails on missing UI and excludes live configuration and priva
     const server = path.join(root, 'server');
     await fs.promises.mkdir(server);
     assert.throws(() => buildDistribution(root, { archive: false }), /缺少/);
-    for (const dir of ['utils', 'middleware', 'routes', 'web', 'admin/dist', 'cert']) {
+    for (const dir of ['utils', 'middleware', 'routes', 'services', 'web', 'admin/dist', 'cert']) {
         await fs.promises.mkdir(path.join(server, dir), { recursive: true });
     }
     for (const file of ['index.js', 'app.js', 'configuration.js', 'clean.js', 'init.js', 'start.js',

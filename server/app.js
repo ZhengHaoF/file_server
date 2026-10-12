@@ -8,15 +8,19 @@ import { createRequire } from 'node:module';
 import { createAuth } from './middleware/auth.js';
 import { HttpError, resolveSafePathAsync as resolveSafePath, fixUploadFilename, publishFile, mapLimit, BLOCKED_EXTENSIONS } from './utils/fileSafety.js';
 import { createPreviewService } from './utils/previews.js';
-import { adminRouter } from './routes/admin.js';
+import { createAdminRouter } from './routes/admin.js';
+import { createAdminRuntime } from './services/adminRuntime.js';
 
 const mimeTypes = createRequire(import.meta.url)('./mime.json');
 const asyncRoute = handler => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 
-export function createApp(config, sql, logger, { staticDir = path.resolve('web'), adminDir = path.resolve('admin/dist') } = {}) {
+export function createApp(config, sql, logger, { staticDir = path.resolve('web'), adminDir = path.resolve('admin/dist'), ...adminOptions } = {}) {
     const app = express();
-    const auth = createAuth(config);
+    let runtime;
+    let activeUploads = 0;
+    const auth = createAuth(config, { onEvent: (...args) => runtime?.audit(...args) });
     const previews = createPreviewService(config, sql, logger);
+    runtime = createAdminRuntime(config, sql, logger, previews, { ...adminOptions, uploadStats: () => activeUploads });
     app.disable('x-powered-by');
     app.use((req, res, next) => {
         res.set('X-Content-Type-Options', 'nosniff');
@@ -27,7 +31,7 @@ export function createApp(config, sql, logger, { staticDir = path.resolve('web')
     app.use(cors({
         origin(origin, callback) { callback(null, !origin || config.allowedOrigins.includes(origin)); },
         credentials: true,
-        exposedHeaders: ['Content-Range', 'Accept-Ranges'],
+        exposedHeaders: ['Content-Range', 'Accept-Ranges', 'Content-Disposition', 'X-Export-Truncated'],
     }));
     app.use(express.json({ limit: '16kb' }));
     app.use(express.urlencoded({ extended: false, limit: '16kb' }));
@@ -41,6 +45,7 @@ export function createApp(config, sql, logger, { staticDir = path.resolve('web')
         next();
     });
     app.post('/api/auth/login', auth.login);
+    app.get('/api/auth/session', auth.sessionInfo);
     app.post('/api/auth/logout', auth.logout);
     app.post('/api/auth/ticket', auth.renew);
 
@@ -139,7 +144,7 @@ export function createApp(config, sql, logger, { staticDir = path.resolve('web')
         res.json({ msg: '重命名成功' });
     }));
 
-    const upload = multer({
+    const makeUpload = () => multer({
         storage: multer.diskStorage({
             async destination(req, file, callback) {
                 try {
@@ -160,7 +165,6 @@ export function createApp(config, sql, logger, { staticDir = path.resolve('web')
             catch (error) { callback(error); }
         },
     }).single('file');
-    let activeUploads = 0;
     app.post('/upload', auth.writeRequired, (req, res, next) => {
         if (!config.uploadEnabled) return res.status(403).json({ msg: '上传功能未启用' });
         if (activeUploads >= 4) return res.status(429).json({ msg: '上传任务过多，请稍后重试' });
@@ -169,7 +173,7 @@ export function createApp(config, sql, logger, { staticDir = path.resolve('web')
         const release = () => { if (!released) { activeUploads--; released = true; } };
         res.once('finish', release);
         res.once('close', release);
-        upload(req, res, error => {
+        makeUpload()(req, res, error => {
             if (error) return next(error);
             next();
         });
@@ -190,12 +194,14 @@ export function createApp(config, sql, logger, { staticDir = path.resolve('web')
         // Legacy request body password remains usable, but only the strong admin credential.
         if (typeof req.body?.pwd === 'string') req.headers['x-admin-token'] = req.body.pwd;
         auth.adminRequired(req, res, next);
-    }, (req, res) => {
-        res.json({ msg: '开始重启' });
-        setTimeout(() => process.exit(0), 100);
+    }, (req, res, next) => {
+        try { res.json(runtime.restart(auth.credentials(req))); } catch (error) { next(error); }
     });
     app.get('/cleanOldData/:day', auth.adminRequired, (req, res) => res.status(405).json({ msg: '缓存清理请改用 POST /api/admin/cache/clean' }));
-    app.use('/api/admin', auth.adminRequired, (req, res, next) => { req.adminSql = sql; next(); }, adminRouter);
+    app.use('/api/admin', auth.adminRequired, (req, res, next) => {
+        req.adminIdentity = auth.credentials(req);
+        next();
+    }, createAdminRouter(runtime, auth));
 
     app.use(express.static(staticDir));
     if (fs.existsSync(adminDir)) {
@@ -210,7 +216,8 @@ export function createApp(config, sql, logger, { staticDir = path.resolve('web')
         const status = error.status || (error.code === 'LIMIT_FILE_SIZE' ? 413
             : error instanceof multer.MulterError ? 400 : error.code === 'ENOENT' ? 404 : 500);
         if (status >= 500) logger.error(`请求处理失败: ${error.message}`);
-        res.status(status).json({ msg: status >= 500 ? '服务器处理失败' : error.message });
+        res.status(status).json({ msg: status >= 500 ? '服务器处理失败' : error.message,
+            ...(error.errors ? { errors: error.errors } : {}) });
     });
-    return { app, auth };
+    return { app, auth, previews, runtime, close: () => runtime.close() };
 }

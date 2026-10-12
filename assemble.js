@@ -20,6 +20,7 @@ function syncDir(src, dest) {
 }
 
 try {
+  if (process.env.VITE_ADMIN_PREVIEW === '1') throw new Error('assemble 只能生成生产后台，请取消 VITE_ADMIN_PREVIEW；隔离演示使用 admin 的 build:preview');
   // 1. 构建 web 前端（vite 输出 web/dist）
   run('npm run build', path.join(root, 'web'));
   // 2. 构建 admin 管理面板（vite 输出 admin/dist）

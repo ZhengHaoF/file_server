@@ -9,5 +9,8 @@
     "uploadMaxSizeMB": 4096,
     "host": "127.0.0.1",
     "httpsEnabled": false,
-    "allowedOrigins": []
+    "allowedOrigins": [],
+    "cacheMaxSizeMB": 0,
+    "cacheRetentionDays": 30,
+    "autoCleanupEnabled": false
 }

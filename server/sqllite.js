@@ -4,6 +4,8 @@ import Database from 'better-sqlite3';
 export class Sql {
     constructor(config, dbPath = 'imgCache.db') {
         this.imgCache = config;
+        this.dbPath = dbPath;
+        this.cacheVersion = 0;
         this.db = new Database(dbPath);
         this.db.pragma('journal_mode = WAL');
         this.db.pragma('busy_timeout = 5000');
@@ -12,9 +14,11 @@ export class Sql {
 
     ensureSchema() {
         this.db.exec('CREATE TABLE IF NOT EXISTS image (psha256 TEXT PRIMARY KEY, ext TEXT, ctime TEXT);');
+        const columns = this.db.prepare('PRAGMA table_info(image)').all().map(column => column.name);
+        if (!columns.includes('kind')) this.db.exec("ALTER TABLE image ADD COLUMN kind TEXT NOT NULL DEFAULT 'legacy'");
         this.db.exec('CREATE INDEX IF NOT EXISTS image_access_time ON image(CAST(ctime AS INTEGER));');
         this.statements = {
-            insert: this.db.prepare('INSERT OR REPLACE INTO image (psha256, ext, ctime) VALUES (?, ?, ?)'),
+            insert: this.db.prepare('INSERT OR REPLACE INTO image (psha256, ext, ctime, kind) VALUES (?, ?, ?, ?)'),
             update: this.db.prepare('UPDATE image SET ctime = ? WHERE psha256 = ? AND CAST(ctime AS INTEGER) < ?'),
             select: this.db.prepare('SELECT * FROM image WHERE psha256 = ?'),
         };
@@ -35,20 +39,26 @@ export class Sql {
      */
     reset(){
         this.db.exec('DELETE FROM image;');
+        this.cacheVersion++;
     }
-    insertInfo(psha256,ext) {
+    insertInfo(psha256,ext,kind = 'legacy') {
         try {
             const stmt = this.statements.insert;
-            stmt.run(psha256, ext, String(new Date().getTime()));
+            stmt.run(psha256, ext, String(new Date().getTime()), ['image', 'video'].includes(kind) ? kind : 'legacy');
+            this.cacheVersion++;
         } catch (err) {
             return console.log(err);
         }
     }
 
-    updateInfo(psha256) {
+    updateInfo(psha256, kind) {
         try {
             const now = Date.now();
             this.statements.update.run(String(now), psha256, now - 60000);
+            if (['image', 'video'].includes(kind)) {
+                const changed = this.db.prepare('UPDATE image SET kind=? WHERE psha256=? AND kind<>?').run(kind, psha256, kind);
+                this.cacheVersion += changed.changes;
+            }
         } catch (err) {
             return console.log(err);
         }
@@ -113,6 +123,7 @@ export class Sql {
                             const deleted = this.db.prepare('DELETE FROM image WHERE psha256 = ? AND ctime = ?')
                                 .run(item.psha256, item.ctime);
                             num += deleted.changes;
+                            this.cacheVersion += deleted.changes;
                         } catch (error) { failures.add(item.psha256); }
                     }
                 }

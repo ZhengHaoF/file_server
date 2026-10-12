@@ -105,3 +105,4 @@ dist
 *.njsproj
 *.sln
 *.sw?
+dist-preview

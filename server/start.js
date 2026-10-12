@@ -1,99 +1,47 @@
-import {spawn} from 'child_process'
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { nextRestartCount } from './utils/restartPolicy.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const LOG_FILE = path.join(__dirname, 'logs', 'restart.log');
-const MAX_RESTARTS = 10;
-let restartCount = 0;
-let currentSubprocess = null;
-
-function log(msg) {
-    const timestamp = new Date().toISOString();
-    const logMsg = `[${timestamp}] ${msg}\n`;
-    console.log(msg);
-    
-    const logDir = path.dirname(LOG_FILE);
-    if (!fs.existsSync(logDir)) {
-        fs.mkdirSync(logDir, { recursive: true });
+const directory = path.dirname(fileURLToPath(import.meta.url));
+const logFile = path.join(directory, 'logs', 'restart.log');
+let failures = 0, child = null, timer = null, stopping = false;
+function log(message) {
+    fs.mkdirSync(path.dirname(logFile), { recursive: true });
+    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${message}\n`);
+    console.log(message);
+}
+function start() {
+    if (stopping) return;
+    log(`启动服务器，连续异常重启次数 ${failures}/10`);
+    const launchedAt = Date.now();
+    let planned = false, settled = false;
+    child = spawn(process.execPath, [path.join(directory, 'index.js')], {
+        cwd: directory, stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+        env: { ...process.env, FILE_SERVER_MANAGED: '1' },
+    });
+    child.on('message', message => { if (message?.type === 'planned-restart') planned = true; });
+    const restart = code => {
+        if (settled) return;
+        settled = true; child = null;
+        if (stopping) return;
+        failures = nextRestartCount(failures, { planned, uptimeMs: Date.now() - launchedAt });
+        log(`子进程退出 ${code}；${planned ? '计划重启' : '异常恢复'}`);
+        if (failures > 10) { log('连续启动失败过多，停止重启'); process.exitCode = 1; return; }
+        timer = setTimeout(start, 1000);
+    };
+    child.once('close', restart);
+    child.once('error', error => { log(`启动失败: ${error.message}`); restart(1); });
+}
+function stop() {
+    stopping = true; clearTimeout(timer);
+    if (child) {
+        child.kill('SIGTERM');
+        const timeout = setTimeout(() => { child?.kill('SIGKILL'); }, 12000);
+        child.once('close', () => clearTimeout(timeout));
     }
-    fs.appendFileSync(LOG_FILE, logMsg);
 }
-
-function startServer() {
-    log(`启动服务器 (重启次数: ${restartCount}/${MAX_RESTARTS})`);
-    
-    const subprocess = spawn('node', [path.join(__dirname, 'index.js')], {
-        stdio: 'inherit',
-        detached: false,
-        env: { ...process.env },
-        cwd: __dirname
-    });
-
-    currentSubprocess = subprocess;
-
-    subprocess.on('close', (code) => {
-        log(`服务器进程退出，退出码: ${code}`);
-        currentSubprocess = null;
-        
-        if (code === 0) {
-            log('服务器正常退出，等待重新启动...');
-        } else {
-            log('服务器异常退出，准备重启...');
-        }
-        
-        if (restartCount < MAX_RESTARTS) {
-            restartCount++;
-            setTimeout(() => {
-                startServer();
-            }, 1000);
-        } else {
-            log('达到最大重启次数限制，停止自动重启');
-            process.exit(1);
-        }
-    });
-
-    subprocess.on('error', (err) => {
-        log(`服务器进程错误: ${err.message}`);
-        currentSubprocess = null;
-        
-        if (restartCount < MAX_RESTARTS) {
-            restartCount++;
-            log('准备重新启动服务器...');
-            setTimeout(() => {
-                startServer();
-            }, 2000);
-        } else {
-            log('达到最大重启次数限制，停止自动重启');
-            process.exit(1);
-        }
-    });
-
-}
-
-    process.once('SIGINT', () => {
-        log('收到终止信号，关闭服务器...');
-        if (currentSubprocess) {
-            currentSubprocess.kill('SIGTERM');
-        }
-        process.exit(0);
-    });
-
-    process.once('SIGTERM', () => {
-        log('收到终止信号，关闭服务器...');
-        if (currentSubprocess) {
-            currentSubprocess.kill('SIGTERM');
-        }
-        process.exit(0);
-    });
-
-    process.once('exit', (code) => {
-        log(`主进程退出，退出码: ${code}`);
-    });
-
-log('='.repeat(50));
-log('服务器管理程序启动');
-log('='.repeat(50));
-startServer();
+process.once('SIGINT', stop);
+process.once('SIGTERM', stop);
+start();

@@ -42,13 +42,24 @@ HTTP 默认 `127.0.0.1:3000`；HTTPS 默认关闭，可由部署者启用。错�
 | 方法与路径 | 功能 |
 |---|---|
 | `GET /api/admin/status` | CPU、内存、磁盘、进程状态 |
-| `GET /api/admin/cache/stats` | 缓存文件数量与大小，异步统计，结果缓存 30 秒 |
+| `GET /api/admin/cache/stats` | 图片/视频/历史缓存及 SQLite main/WAL/SHM，异步统计缓存 15 秒，`refresh=true` 强制刷新；生成和维护使缓存失效 |
 | `POST /api/admin/cache/clean` | `{days: 1..3650}` 按数据库最近访问时间清理，或 `{all:true}` 清空 |
-| `GET /api/admin/logs` | `level`、`keyword`、`limit`，上限 1000 条 |
-| `GET /api/admin/config` | 只读脱敏配置；不返回真实管理/文件令牌 |
+| `POST /api/admin/cache/jobs` | `{mode:"expired"\|"all"\|"policy",days?}`，202 返回可轮询的持久化任务 |
+| `GET /api/admin/jobs` / `GET /api/admin/jobs/:id` | 任务历史及进度，`limit`/`before` 分页 |
+| `GET /api/admin/audit` | 管理操作记录，`limit`/`before` 分页 |
+| `GET /api/admin/logs` | `level`、`keyword`、`start`、`end`、`source`、`limit`、`before`；稳定游标，上限 1000 条 |
+| `GET /api/admin/logs/export` | 同样过滤，`format=csv\|json`，最多 10000 条；CSV 防公式注入 |
+| `GET /api/admin/config` | 脱敏兼容字段，以及 revision、values、fields、pendingRestart、backupAvailable |
+| `POST /api/admin/config/validate` | `{revision,values}`，返回差异和风险提示 |
+| `PUT /api/admin/config` | `{revision,values}`，原子保存白名单字段，过期版本 409，非法字段 400 |
+| `POST /api/admin/config/rollback` | `{revision}`，恢复上次备份 |
+| `GET /api/admin/config/export` | 可编辑的非凭据配置 JSON |
+| `GET /api/admin/sessions` / `DELETE /api/admin/sessions/:id` | 会话非凭据 ID 列表与撤销，不能获得真实令牌 |
 | `GET /api/admin/database/status` | 缓存数据库状态 |
-| `POST /api/admin/restart` | 响应后退出，由外部守护程序重启 |
+| `POST /api/admin/restart` | 202 已接受并返回旧 bootId；无守护/维护中返回 409，前端另行验证恢复 |
 | `WS /api/admin/logs/stream` | HTTP 与 HTTPS 均可接入；HTTPS 页面须使用 `wss://` |
+
+`GET /api/auth/session` 返回当前 `role`、`expiresAt`、非凭据 `sessionId`。后台状态与会话接口禁止缓存；日志实时流同样在会话撤销后关闭。完整数据字段、单位、配置加载与任务状态约定见 [ADMIN_CONTRACT.md](ADMIN_CONTRACT.md)。
 
 ## 缓存与错误码
 

@@ -1,13 +1,12 @@
 import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-import router from './router/index.js'
 import App from './App.vue'
-import './style.css'
+import { createAppRouter } from './router/index.js'
+import { PREVIEW } from './lib/env.js'
+import { initTheme } from './composables/useTheme.js'
+import './styles/base.css'
 
-const app = createApp(App)
-const pinia = createPinia()
-
-app.use(pinia)
-app.use(router)
-
-app.mount('#app')
+initTheme()
+// Preview builds may be embedded under an arbitrary base path: use in-memory history starting at /overview.
+const router = createAppRouter({ memory: PREVIEW })
+if (PREVIEW) router.push('/overview')
+createApp(App).use(router).mount('#app')

@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import { WebSocketServer } from 'ws';
-import { parseLogLine } from './systemInfo.js';
+import path from 'node:path';
+import { logEntry } from '../services/adminLogs.js';
 
-export function attachLogStream(server, auth, config, logger) {
+export function attachLogStream(server, auth, config, logger, { logsDir = path.join(config.configDir || process.cwd(), 'logs') } = {}) {
     const wss = new WebSocketServer({ noServer: true, maxPayload: 4096 });
     server.on('upgrade', (req, socket, head) => {
         const url = new URL(req.url, 'http://localhost');
@@ -17,8 +18,10 @@ export function attachLogStream(server, auth, config, logger) {
         }
         wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws, req));
     });
-    const logFile = 'logs/app.log';
+    const logFile = path.join(logsDir, 'app.log');
     let lastSize = 0;
+    let lastIdentity = null;
+    let partial = '';
     let reading = false;
     async function poll() {
         if (reading || !wss.clients.size) return;
@@ -28,15 +31,21 @@ export function attachLogStream(server, auth, config, logger) {
                 if (auth.credentials(client.request)?.role !== 'admin') client.close(1008, '管理会话已失效');
             }
             const stat = await fs.promises.stat(logFile);
-            if (stat.size < lastSize) lastSize = 0; // Rotation/truncation.
+            const identity = `${stat.dev}:${stat.ino}`;
+            if (stat.size < lastSize || identity !== lastIdentity) { lastSize = 0; partial = ''; }
+            lastIdentity = identity;
             if (stat.size === lastSize) return;
             const end = stat.size;
             const start = Math.max(lastSize, end - 256 * 1024);
             let buffer = '';
             for await (const chunk of fs.createReadStream(logFile, { start, end: end - 1, encoding: 'utf8' })) buffer += chunk;
+            if (start > lastSize) { buffer = buffer.slice(buffer.indexOf('\n') + 1); partial = ''; }
             lastSize = end;
-            for (const line of buffer.split('\n').filter(Boolean)) {
-                const log = parseLogLine(line);
+            const rows = (partial + buffer).split('\n');
+            partial = rows.pop().slice(-65536);
+            for (const line of rows.filter(Boolean)) {
+                const log = logEntry(line);
+                if (!log) continue;
                 for (const client of wss.clients) {
                     if (client.bufferedAmount > 1024 * 1024) { client.close(1013, '客户端处理过慢'); continue; }
                     if (client.readyState === 1 && (!client.level || client.level === log.level.toLowerCase())) client.send(JSON.stringify(log));

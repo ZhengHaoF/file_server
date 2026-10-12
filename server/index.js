@@ -20,9 +20,11 @@ const logger = log4js.getLogger();
 try {
     const config = loadConfig();
     const sql = getSqlInstance(config.imgCache, config.dbPath);
-    const { app, auth } = createApp(config, sql, logger);
+    const { app, auth, close: closeApp } = createApp(config, sql, logger);
     const servers = [];
     const logStreams = [];
+    let exitCode = 0;
+    setServerStatus({ http: 'stopped', https: config.httpsEnabled ? 'stopped' : 'disabled' });
     const tls = config.httpsEnabled === true ? {
         cert: fs.readFileSync(config.certPath || './cert/file.crt'),
         key: fs.readFileSync(config.keyPath || './cert/private.pem'),
@@ -30,7 +32,12 @@ try {
     const start = (server, port, name) => {
         server.requestTimeout = 120000;
         server.headersTimeout = 15000;
-        server.on('error', error => { logger.error(`${name} 服务失败: ${error.message}`); process.exitCode = 1; });
+        server.on('error', error => {
+            logger.error(`${name} 服务失败: ${error.message}`);
+            setServerStatus({ [name.toLowerCase()]: 'error' });
+            exitCode = 1;
+            shutdown();
+        });
         server.listen(port, config.host, () => {
             logger.info(`${name} 服务监听 ${config.host}:${port}`);
             setServerStatus({ [name.toLowerCase()]: 'running' });
@@ -48,10 +55,10 @@ try {
         // Upgraded sockets are not closed by HTTP server.close().
         for (const stream of logStreams) for (const client of stream.clients) client.terminate();
         const timeout = setTimeout(() => process.exit(1), 10000);
-        Promise.all(servers.map(server => new Promise(resolve => server.close(resolve)))).then(() => {
+        Promise.all([closeApp(), ...servers.map(server => new Promise(resolve => server.close(resolve)))]).then(() => {
             clearTimeout(timeout);
             sql.close();
-            log4js.shutdown(() => process.exit(0));
+            log4js.shutdown(() => process.exit(exitCode));
         });
     };
     process.once('SIGINT', shutdown);

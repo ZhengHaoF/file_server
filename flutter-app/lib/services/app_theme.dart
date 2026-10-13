@@ -5,6 +5,22 @@ import 'storage_service.dart';
 final appThemeMode = ValueNotifier<ThemeMode>(ThemeMode.system);
 final appThemeRevision = ValueNotifier<int>(0);
 
+/// Windows UI font — bundled MiSans, same face as the kugo project.
+const _windowsFontFamily = 'MiSans';
+
+/// System faces tried when MiSans lacks a glyph (rare CJK, emoji…).
+const _windowsFontFallback = <String>[
+  'Segoe UI',
+  'Microsoft YaHei',
+  'Microsoft YaHei UI',
+  'Roboto',
+  'Noto Sans CJK SC',
+  'Noto Sans SC',
+];
+
+bool get _isWindowsDesktop =>
+    !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+
 ThemeData buildAppTheme(Brightness brightness) {
   var seed = const Color(0xFFf6823b);
   try {
@@ -35,9 +51,8 @@ ThemeData buildAppTheme(Brightness brightness) {
   return ThemeData(
     useMaterial3: true,
     colorScheme: colors,
-    fontFamily: !kIsWeb && defaultTargetPlatform == TargetPlatform.windows
-        ? 'Segoe UI'
-        : null,
+    fontFamily: _isWindowsDesktop ? _windowsFontFamily : null,
+    fontFamilyFallback: _isWindowsDesktop ? _windowsFontFallback : null,
     appBarTheme: const AppBarTheme(centerTitle: false, elevation: 0),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,

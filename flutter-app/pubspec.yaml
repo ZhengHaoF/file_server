@@ -102,3 +102,10 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+  # Windows UI font — same bundled MiSans as the kugo project, with the
+  # system faces it falls back to for glyphs MiSans lacks.
+  fonts:
+    - family: MiSans
+      fonts:
+        - asset: assets/fonts/MiSans-Regular.ttf

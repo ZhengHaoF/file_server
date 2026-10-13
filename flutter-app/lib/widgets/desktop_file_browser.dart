@@ -4,10 +4,17 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 
 import '../models/file_info.dart';
+import '../pages/download_manager_page.dart';
+import '../pages/settings_page.dart';
 import '../utils/date_utils.dart';
 import '../utils/file_browser_utils.dart';
 import '../utils/file_type_utils.dart';
 import 'file_icon.dart';
+
+/// Which section the main content area shows. `files` is the browser; the
+/// other two swap the whole content region for the full-page manager and
+/// settings views while the workspace rail stays in place.
+enum _Section { files, transfers, settings }
 
 /// Desktop interaction and layout only. Requests, authorization, uploads and
 /// destructive confirmations remain owned by HomePage.
@@ -28,8 +35,6 @@ class DesktopFileBrowser extends StatefulWidget {
   final ValueChanged<String> onNavigate;
   final VoidCallback onRefresh;
   final VoidCallback onUpload;
-  final VoidCallback onTransfers;
-  final VoidCallback onSettings;
   final VoidCallback onTheme;
   final VoidCallback onLogs;
   final VoidCallback onToggleView;
@@ -53,8 +58,6 @@ class DesktopFileBrowser extends StatefulWidget {
     required this.onNavigate,
     required this.onRefresh,
     required this.onUpload,
-    required this.onTransfers,
-    required this.onSettings,
     required this.onTheme,
     required this.onLogs,
     required this.onToggleView,
@@ -82,7 +85,8 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
   final _focus = FocusNode(debugLabel: 'desktop-file-area');
   final _search = TextEditingController();
   final _scroll = ScrollController();
-  bool _details = true;
+  _Section _section = _Section.files;
+  bool _panelVisible = true;
   bool _compact = false;
   List<FileInfo> _visible = [];
   int _columns = 1;
@@ -101,6 +105,11 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
       foldersFirst: widget.foldersFirst,
     );
     _selection.reconcile(_visible);
+  }
+
+  /// Swap the main content region; the workspace rail stays put.
+  void _showSection(_Section section) {
+    setState(() => _section = section);
   }
 
   @override
@@ -344,11 +353,22 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                   _nav(
                     Icons.folder_outlined,
                     '全部文件',
-                    () => widget.onNavigate(''),
+                    () {
+                      setState(() => _section = _Section.files);
+                      widget.onNavigate('');
+                    },
                     rail,
-                    selected: true,
+                    selected: _section == _Section.files,
+                    key: const ValueKey('nav-files'),
                   ),
-                  _nav(Icons.sync_alt, '传输任务', widget.onTransfers, rail),
+                  _nav(
+                    Icons.sync_alt,
+                    '传输任务',
+                    () => _showSection(_Section.transfers),
+                    rail,
+                    selected: _section == _Section.transfers,
+                    key: const ValueKey('nav-transfers'),
+                  ),
                   const Spacer(),
                   _nav(
                     Icons.brightness_6_outlined,
@@ -359,8 +379,10 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                   _nav(
                     Icons.settings_outlined,
                     '设置与登录',
-                    widget.onSettings,
+                    () => _showSection(_Section.settings),
                     rail,
+                    selected: _section == _Section.settings,
+                    key: const ValueKey('nav-settings'),
                   ),
                   _nav(
                     Icons.monitor_heart_outlined,
@@ -387,6 +409,7 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
             Expanded(
               child: Column(
                 children: [
+                  if (_section == _Section.files) ...[
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     child: Row(
@@ -513,8 +536,8 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                         if (wide)
                           _button(
                             Icons.info_outline,
-                            '显示 / 隐藏详情',
-                            () => setState(() => _details = !_details),
+                            _panelVisible ? '隐藏侧栏' : '显示侧栏',
+                            () => setState(() => _panelVisible = !_panelVisible),
                           ),
                       ],
                     ),
@@ -600,7 +623,8 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                               child: const Text('重试'),
                             ),
                             TextButton(
-                              onPressed: widget.onSettings,
+                              onPressed: () =>
+                                  _showSection(_Section.settings),
                               child: const Text('设置'),
                             ),
                           ],
@@ -624,7 +648,7 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                             child: _fileArea(),
                           ),
                         ),
-                        if (wide && _details)
+                        if (wide && _panelVisible)
                           _detailPanel(
                             selected.length == 1 ? selected.single : null,
                           ),
@@ -652,7 +676,7 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                           ),
                         ),
                         TextButton.icon(
-                          onPressed: widget.onTransfers,
+                          onPressed: () => _showSection(_Section.transfers),
                           icon: const Icon(Icons.sync_alt, size: 16),
                           label: Text(
                             widget.activeTransfers > 0
@@ -664,6 +688,14 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                       ],
                     ),
                   ),
+                  ] else
+                    Expanded(
+                      child: switch (_section) {
+                        _Section.transfers => const DownloadManagerPage(),
+                        _Section.settings => const SettingsPage(),
+                        _Section.files => const SizedBox.shrink(),
+                      },
+                    ),
                 ],
               ),
             ),
@@ -679,6 +711,7 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
     VoidCallback callback,
     bool rail, {
     bool selected = false,
+    Key? key,
   }) {
     final colors = Theme.of(context).colorScheme;
     return Padding(
@@ -686,6 +719,7 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
       child: Tooltip(
         message: rail ? label : '',
         child: InkWell(
+          key: key,
           borderRadius: BorderRadius.circular(8),
           onTap: callback,
           child: Container(

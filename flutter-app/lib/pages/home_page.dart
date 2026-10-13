@@ -27,7 +27,6 @@ import '../widgets/desktop_file_browser.dart';
 import '../utils/file_browser_utils.dart';
 import '../widgets/mobile_file_browser.dart';
 import '../widgets/server_connection_sheet.dart';
-import 'settings_page.dart';
 
 class HomePage extends StatefulWidget {
   final String? path;
@@ -54,6 +53,9 @@ class _HomePageState extends State<HomePage> {
   String? _loadError;
   int _loadGeneration = 0;
   CancelToken? _listCancel;
+  // Server address the current list was loaded from; detects address changes
+  // made inside the embedded desktop settings section.
+  String _loadedServerUrl = '';
   final List<String> _history = [];
   int _historyIndex = 0;
 
@@ -118,6 +120,7 @@ class _HomePageState extends State<HomePage> {
     final cancel = _listCancel = CancelToken();
     final generation = ++_loadGeneration;
     final path = _currentPath;
+    _loadedServerUrl = _apiService.serverBaseUrl;
     setState(() {
       _isLoading = true;
       _loadError = null;
@@ -863,30 +866,6 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _openSettings() {
-    final previousServer = _apiService.serverBaseUrl;
-    _listCancel?.cancel('正在修改连接设置');
-    _loadGeneration++;
-    setState(() => _isLoading = false);
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const SettingsPage()),
-    ).then((_) {
-      if (!mounted) return;
-      setState(() {
-        if (previousServer != _apiService.serverBaseUrl) {
-          _fileList = [];
-          _currentPath = '';
-          _history
-            ..clear()
-            ..add('');
-          _historyIndex = 0;
-        }
-      });
-      _loadFileList();
-    });
-  }
-
   void _handleWillPop(BuildContext context) {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return;
     if (_hasDialogOpen) {
@@ -939,11 +918,16 @@ class _HomePageState extends State<HomePage> {
             canForward: _historyIndex < _history.length - 1,
             onBack: () => _moveHistory(-1),
             onForward: () => _moveHistory(1),
-            onNavigate: _navigateDesktop,
+            onNavigate: (path) {
+              // 桌面端设置 section 内改了服务器地址后，点“全部文件”回到浏览器时要重载。
+              final samePath = path == _currentPath;
+              final serverChanged =
+                  _apiService.serverBaseUrl != _loadedServerUrl;
+              _navigateDesktop(path);
+              if (serverChanged && samePath) _loadFileList();
+            },
             onRefresh: _loadFileList,
             onUpload: _pickAndUpload,
-            onTransfers: () => context.push('/downloads'),
-            onSettings: _openSettings,
             onTheme: () {
               cycleAppTheme();
               final label = switch (appThemeMode.value) {

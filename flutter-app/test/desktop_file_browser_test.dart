@@ -2,7 +2,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:z_files/models/file_info.dart';
+import 'package:z_files/pages/download_manager_page.dart';
+import 'package:z_files/pages/settings_page.dart';
+import 'package:z_files/services/storage_service.dart';
 import 'package:z_files/utils/file_browser_utils.dart';
 import 'package:z_files/widgets/desktop_file_browser.dart';
 
@@ -85,8 +89,6 @@ void main() {
         onNavigate: (p) => events.add('path:$p'),
         onRefresh: () => events.add('refresh'),
         onUpload: () => events.add('upload'),
-        onTransfers: () => events.add('transfers'),
-        onSettings: () => events.add('settings'),
         onTheme: () => events.add('theme'),
         onLogs: () => events.add('logs'),
         onToggleView: () => events.add('toggle'),
@@ -292,6 +294,37 @@ void main() {
         expect(size.height, 176);
         expect(size.width, lessThan(360));
       }
+    },
+  );
+
+  testWidgets(
+    'workspace sections swap the main area without pushing routes',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await StorageService().init();
+      await mount(tester);
+      expect(find.byKey(const ValueKey('file:a.txt')), findsOneWidget);
+
+      // 传输任务 replaces the content region; the rail stays, no route push.
+      await tester.tap(find.byKey(const ValueKey('nav-transfers')));
+      await tester.pumpAndSettle();
+      expect(find.byType(DownloadManagerPage), findsOneWidget);
+      expect(find.byKey(const ValueKey('file:a.txt')), findsNothing);
+      expect(events, isEmpty);
+
+      // 设置与登录 swaps the same way and keeps the workspace chrome.
+      await tester.tap(find.byKey(const ValueKey('nav-settings')));
+      await tester.pumpAndSettle();
+      expect(find.byType(SettingsPage), findsOneWidget);
+      expect(find.byType(DownloadManagerPage), findsNothing);
+      expect(events, isEmpty);
+
+      // 全部文件 returns to the browser at the root.
+      await tester.tap(find.byKey(const ValueKey('nav-files')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('file:a.txt')), findsOneWidget);
+      expect(find.byType(SettingsPage), findsNothing);
+      expect(events, ['path:']);
     },
   );
 }

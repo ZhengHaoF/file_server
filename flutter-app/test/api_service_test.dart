@@ -27,6 +27,8 @@ void main() {
         final started = Completer<void>();
         final finish = Completer<void>();
         server.listen((request) async {
+          expect(request.uri.path, '/api/v2/files');
+          expect(request.uri.queryParameters['path'], '');
           started.complete();
           await finish.future;
           request.response.headers.contentType = ContentType.json;
@@ -55,7 +57,7 @@ void main() {
     },
   );
 
-  test('特殊目录名只编码一次，缩略图参数在只读票据之前', () {
+  test('v2 特殊目录名只编码一次，预览保留原路径与只读票据', () {
     final file = FileInfo.fromJson(
       {
         'name': 'cost\$2026.png',
@@ -68,14 +70,16 @@ void main() {
       readTicket: 'read-ticket',
     );
     final uri = Uri.parse(file.url!);
-    expect(
-      Uri.decodeComponent(uri.path),
-      '/getFile/图片 #100%/a__b/cost\$2026.png',
-    );
+    expect(uri.path, '/api/v2/content');
+    expect(uri.queryParameters['path'], '图片 #100%/a__b/cost\$2026.png');
     expect(uri.path.contains('%25E5'), false);
     expect(uri.queryParameters['ticket'], 'read-ticket');
     final preview = Uri.parse(ApiService.imagePreviewUrl(file.url!, 9000));
-    expect(preview.path.endsWith('.png!4000x4000'), true);
+    expect(preview.path, '/api/v2/preview');
+    expect(preview.queryParameters['path'], uri.queryParameters['path']);
+    expect(preview.queryParameters['kind'], 'image');
+    expect(preview.queryParameters['width'], '4000');
+    expect(preview.queryParameters['height'], '4000');
     expect(preview.queryParameters['ticket'], 'read-ticket');
   });
 
@@ -100,6 +104,8 @@ void main() {
             }),
           );
         } else {
+          expect(request.uri.path, '/api/v2/files');
+          expect(request.uri.queryParameters['path'], 'a__b');
           expect(
             request.headers.value('Authorization'),
             'Bearer temporary-session',
@@ -133,10 +139,22 @@ void main() {
         Uri.parse(files.first.url!).queryParameters['ticket'],
         'temporary-read-ticket',
       );
+      final content = Uri.parse(api.getFileUrl(r'$$', 'foo.jpg!320x240'));
+      expect(content.path, '/api/v2/content');
+      expect(content.queryParameters['path'], r'$$/foo.jpg!320x240');
+      expect(content.queryParameters['ticket'], 'temporary-read-ticket');
+      final video = Uri.parse(api.getVideoPreviewUrl(r'$/视频 #100%.mp4'));
+      expect(video.path, '/api/v2/preview');
+      expect(video.queryParameters['path'], r'$/视频 #100%.mp4');
+      expect(video.queryParameters['kind'], 'video');
+      expect(video.queryParameters['ticket'], 'temporary-read-ticket');
       expect(
         api.authHeadersFor('$baseUrl/upload')['Authorization'],
         'Bearer temporary-session',
       );
+      expect(api.adminUri.toString(), '$baseUrl/admin/');
+      expect(api.adminUri.query, isEmpty);
+      expect(api.adminUri.userInfo, isEmpty);
       expect(api.authHeadersFor('https://another.example.com/upload'), isEmpty);
       final logs = NetworkLogService().logs;
       expect(
@@ -158,4 +176,48 @@ void main() {
       expect(api.isLoggedIn, false);
     }, _LocalHttpOverrides());
   });
+
+  test(
+    'v2 root and literal dollar directories are distinct HTTP query values',
+    () async {
+      await HttpOverrides.runWithHttpOverrides(() async {
+        SharedPreferences.setMockInitialValues({});
+        await StorageService().init();
+        final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+        addTearDown(() => server.close(force: true));
+        final received = <String>[];
+        server.listen((request) async {
+          expect(request.uri.path, '/api/v2/files');
+          received.add(request.uri.queryParameters['path']!);
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(
+            jsonEncode({
+              'list': [
+                {
+                  'name': 'foo.jpg!320x240',
+                  'size': 1,
+                  'isFile': true,
+                  'isDirectory': false,
+                },
+              ],
+              'nextStart': null,
+            }),
+          );
+          await request.response.close();
+        });
+        final api = ApiService()
+          ..setServerUrl('http://127.0.0.1:${server.port}');
+        for (final path in ['', r'$', r'$$', r'$/$$', '图片 #100%/字面%2F']) {
+          final files = await api.getFileList(path);
+          final content = Uri.parse(files.single.url!);
+          expect(content.path, '/api/v2/content');
+          expect(
+            content.queryParameters['path'],
+            path.isEmpty ? 'foo.jpg!320x240' : '$path/foo.jpg!320x240',
+          );
+        }
+        expect(received, ['', r'$', r'$$', r'$/$$', '图片 #100%/字面%2F']);
+      }, _LocalHttpOverrides());
+    },
+  );
 }

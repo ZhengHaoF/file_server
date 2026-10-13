@@ -161,10 +161,10 @@ onMounted(async () => {
           <div class="card-head"><h2><Settings2 aria-hidden="true" />清理策略</h2><RouterLink to="/config" class="small" data-testid="link-cache-policy">修改策略</RouterLink></div>
           <div class="card-body">
             <dl v-if="d" class="kv">
-              <dt>容量上限</dt><dd class="num">{{ policy?.cacheMaxSizeMB ? `${formatNumber(policy.cacheMaxSizeMB)} MB` : '不限制' }}</dd>
+              <dt>容量上限</dt><dd class="num">{{ typeof policy?.cacheMaxSizeMB !== 'number' ? DASH : policy.cacheMaxSizeMB === 0 ? '不限制' : `${formatNumber(policy.cacheMaxSizeMB)} MB` }}</dd>
               <dt>保留天数</dt><dd class="num">{{ policy?.cacheRetentionDays ? `${policy.cacheRetentionDays} 天` : DASH }}</dd>
-              <dt>自动清理</dt><dd><span class="badge" :class="policy?.autoCleanupEnabled ? 'ok' : ''">{{ policy?.autoCleanupEnabled ? '已开启' : '已关闭' }}</span></dd>
-              <dt>上次清理</dt><dd class="num">{{ d.lastCleanupAt ? formatDateTime(d.lastCleanupAt) : '从未' }}</dd>
+              <dt>自动清理</dt><dd><span class="badge" :class="policy?.autoCleanupEnabled === true ? 'ok' : ''">{{ policy?.autoCleanupEnabled === true ? '已开启' : policy?.autoCleanupEnabled === false ? '已关闭' : '未知' }}</span></dd>
+              <dt>上次清理</dt><dd class="num">{{ d.lastCleanupAt ? formatDateTime(d.lastCleanupAt) : d.lastCleanupAt === null ? '从未' : DASH }}</dd>
             </dl>
             <div v-else class="stack" aria-busy="true"><div v-for="i in 4" :key="i" class="skeleton sk-line" /></div>
           </div>
@@ -175,7 +175,7 @@ onMounted(async () => {
     <div class="card">
       <div class="card-head"><h2><Eraser aria-hidden="true" />手动清理</h2><RouterLink to="/operations" class="small" data-testid="link-cache-jobs"><ListChecks class="inline-icon" aria-hidden="true" />全部任务记录</RouterLink></div>
       <div class="card-body clean">
-        <fieldset class="modes" :disabled="!!activeJob || submitting">
+        <fieldset class="modes" :disabled="!d || stats.stale.value || !!maintenance || !!activeJob || submitting">
           <legend class="sr-only">清理方式</legend>
           <label v-for="m in MODES" :key="m.value" class="mode" :class="{ on: mode === m.value, danger: m.value === 'all' }">
             <input v-model="mode" type="radio" name="mode" :value="m.value" :data-testid="`radio-mode-${m.value}`" />
@@ -188,7 +188,7 @@ onMounted(async () => {
             <input id="days" v-model.number="days" class="input num" :class="{ invalid: daysError }" type="number" min="1" max="3650" step="1" inputmode="numeric" :aria-invalid="!!daysError" data-testid="input-days" @input="daysError && validateDays()" />
             <p v-if="daysError" class="field-error" role="alert">{{ daysError }}</p>
           </div>
-          <button type="button" class="btn" :class="mode === 'all' ? 'btn-danger' : 'btn-primary'" :disabled="!!activeJob || submitting" data-testid="button-start-clean" @click="startJob">
+          <button type="button" class="btn" :class="mode === 'all' ? 'btn-danger' : 'btn-primary'" :disabled="!d || stats.stale.value || !!maintenance || !!activeJob || submitting" data-testid="button-start-clean" @click="startJob">
             <RefreshCw v-if="submitting" class="spin" aria-hidden="true" /><Eraser v-else aria-hidden="true" />{{ activeJob ? '有任务正在运行' : MODES.find((m) => m.value === mode).label }}
           </button>
         </div>

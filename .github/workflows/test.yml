@@ -13,14 +13,79 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm --prefix server ci
       - run: npm --prefix web ci
       - run: npm --prefix admin ci
-      - run: npm --prefix server run check
+      - run: npm run test:repository
       - run: npm --prefix web test -- --run
       - run: npm --prefix admin test -- --run
       - run: npm run assemble
+      - run: npm run test:distribution
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server-rust
+      - run: sudo apt-get update && sudo apt-get install -y libvips-tools ffmpeg
+      - run: npm --prefix web ci && npm --prefix admin ci
+      - run: npm run assemble
+      - run: npm run check:rust
+      - run: cargo build --locked --manifest-path server-rust/Cargo.toml
+      - run: npm run test:rust:smoke
+      - run: npm run test:rust:security
+      - run: npm run build:server
+      - run: npm run test:distribution && npm run pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: file-serve-rust-linux-x64
+          path: dist/file-serve-rust-linux-x64.tar.gz
+  rust-windows-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server-rust
+      - run: npm --prefix web ci
+      - run: npm --prefix admin ci
+      - run: npm run assemble
+      - run: npm run build:server
       - run: npm run pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: file-serve-rust-windows-x64
+          path: dist/file-serve-rust-win32-x64.zip
+  rust-docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f server-rust/Dockerfile -t file-serve:ci .
+      - name: Non-root readonly container readiness
+        run: |
+          docker run -d --name file-serve-ci --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --memory 1g --pids-limit 128 \
+            --tmpfs /tmp:size=128m,mode=1777 \
+            --tmpfs /var/lib/file-serve:uid=10001,gid=10001,mode=0700 \
+            -p 127.0.0.1:3100:3000 file-serve:ci
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:3100/health/ready; then exit 0; fi
+            sleep 1
+          done
+          docker logs file-serve-ci
+          exit 1
+      - if: always()
+        run: docker logs file-serve-ci || true; docker rm -f file-serve-ci || true
   flutter:
     runs-on: ubuntu-latest
     steps:

@@ -8,6 +8,7 @@ import { confirm } from '../composables/useConfirm.js'
 import { auth } from '../stores/auth.js'
 import { describeError } from '../lib/http.js'
 import { monitorRestart } from '../lib/restartMonitor.js'
+import { runtimeInfo, restartInfo, isUnsupportedRestart, capabilityEntries } from '../lib/serverInfo.js'
 import { formatBytes, formatMB, formatGB, formatPercent, formatDuration, formatNumber, formatTime, DASH } from '../lib/format.js'
 import SampleStamp from '../components/SampleStamp.vue'
 import InlineAlert from '../components/InlineAlert.vue'
@@ -20,6 +21,9 @@ const router = useRouter()
 const status = useResource((o) => api.getStatus(o), { interval: 10000 })
 const s = computed(() => status.data.value)
 const offline = computed(() => !!status.error.value && ['network', 'timeout', 'http'].includes(status.error.value.kind))
+const runtime = computed(() => runtimeInfo(s.value?.server))
+const restartCapability = computed(() => restartInfo(s.value?.server))
+const capabilities = computed(() => capabilityEntries(s.value?.capabilities ?? s.value?.server?.capabilities))
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v)
 
@@ -54,7 +58,9 @@ const kpis = computed(() => {
     {
       key: 'process', label: '服务进程', icon: Activity,
       value: formatBytes(proc.rss), meter: null,
-      sub: `堆 ${formatBytes(proc.heapUsed)} / ${formatBytes(proc.heapTotal)}`
+      sub: isNum(proc.heapUsed) && isNum(proc.heapTotal)
+        ? `堆 ${formatBytes(proc.heapUsed)} / ${formatBytes(proc.heapTotal)}`
+        : '当前运行时未提供堆内存统计'
     }
   ]
 })
@@ -73,7 +79,8 @@ const queues = computed(() => {
 const maintenanceText = computed(() => describeMaintenance(s.value?.queues?.maintenance))
 
 function describeMaintenance(m) {
-  if (m === undefined || m === null || m === false) return { tone: '', text: '空闲' }
+  if (m === undefined) return { tone: '', text: '未知' }
+  if (m === null || m === false) return { tone: '', text: '空闲' }
   if (m === true) return { tone: 'warn', text: '维护中' }
   if (typeof m === 'string') return { tone: m === 'idle' ? '' : 'warn', text: m === 'idle' ? '空闲' : m }
   if (typeof m === 'object') {
@@ -94,6 +101,7 @@ onBeforeUnmount(() => restartAbort?.abort())
 const restartBusy = computed(() => ['requesting', 'waiting', 'restarting'].includes(restart.value.phase))
 
 async function onRestart() {
+  if (!restartCapability.value.supported || status.stale.value || restartBusy.value) return
   const ok = await confirm({
     title: '重启服务',
     message: '服务将短暂不可用，进行中的上传与预览任务会中断。\n重启后所有会话（包括当前会话）都会失效，需要重新登录。',
@@ -101,18 +109,20 @@ async function onRestart() {
     tone: 'danger'
   })
   if (!ok) return
-  const previousBootId = s.value?.bootId ?? null
+  let previousBoot = s.value?.bootId ?? null
   restart.value = { phase: 'requesting', message: '', elapsed: 0 }
   try {
-    await api.restartServer()
+    const accepted = await api.restartServer()
+    // The acknowledgement is authoritative if a fresher bootId is returned.
+    if (accepted?.bootId) previousBoot = accepted.bootId
   } catch (error) {
-    restart.value = { phase: error?.status === 409 ? 'unsupported' : 'failed', message: describeError(error), elapsed: 0 }
+    restart.value = { phase: isUnsupportedRestart(error) ? 'unsupported' : 'failed', message: describeError(error), elapsed: 0 }
     return
   }
   status.stop() // avoid status polling during restart (401s here are expected)
   restartAbort = new AbortController()
   const result = await monitorRestart({
-    previousBootId,
+    previousBootId: previousBoot,
     checkSession: () => api.getSession({ timeout: 4000, signal: restartAbort.signal }),
     getBootId: async () => (await api.getStatus({ timeout: 4000, signal: restartAbort.signal, skipAuthHandler: true }))?.bootId,
     signal: restartAbort.signal,
@@ -217,10 +227,17 @@ const RESTART_TEXT = {
             <dt>HTTPS</dt>
             <dd class="row"><ServerStatusBadge :status="s.server?.httpsStatus || 'unknown'" data-testid="status-https" /><span v-if="s.server?.httpsStatus !== 'disabled'" class="mono small">:{{ s.server?.httpsPort ?? DASH }}</span></dd>
             <dt>运行时长</dt><dd class="num">{{ formatDuration(s.server?.uptime) }}</dd>
-            <dt>Node.js</dt><dd class="mono small">{{ s.server?.nodeVersion || DASH }}</dd>
+            <dt>运行时</dt><dd class="mono small" data-testid="text-runtime">{{ runtime.label }}</dd>
+            <dt>版本</dt><dd class="mono small" data-testid="text-runtime-version">{{ runtime.version || DASH }}</dd>
             <dt>部署方式</dt><dd>{{ s.server?.deployment || DASH }}</dd>
             <dt>启动标识</dt><dd class="mono small faint">{{ s.bootId || DASH }}</dd>
           </dl>
+          <div v-if="capabilities.length" class="stack service-capabilities" data-testid="service-capabilities">
+            <h3 class="small muted">功能能力</h3>
+            <div class="row">
+              <span v-for="c in capabilities" :key="c.key" class="badge" :class="c.available ? 'ok' : 'warn'" :data-testid="`capability-${c.key}`">{{ c.label }}：{{ c.available ? '可用' : '不可用' }}</span>
+            </div>
+          </div>
           <p v-if="status.stale.value" class="small warn-text">以上为最后一次成功采样时的状态。</p>
         </div>
       </div>
@@ -263,10 +280,10 @@ const RESTART_TEXT = {
       <div class="card-head"><h2><Power aria-hidden="true" />服务重启</h2></div>
       <div class="card-body restart">
         <div class="restart-text">
-          <p v-if="s.server?.restartSupported" class="small">由进程守护（{{ s.server?.deployment || '托管' }}）负责拉起新进程。重启会中断进行中的任务并重置所有会话。</p>
-          <p v-else class="small muted" data-testid="text-restart-unsupported">当前部署方式<span v-if="s.server?.deployment">（{{ s.server.deployment }}）</span>没有可用的进程守护，无法在线重启。请在主机或容器管理工具中重启。</p>
+          <p v-if="restartCapability.supported" class="small">由进程守护（{{ s.server?.deployment || '托管' }}）负责拉起新进程。重启会中断进行中的任务并重置所有会话。</p>
+          <p v-else class="small muted" data-testid="text-restart-unsupported">{{ restartCapability.text }}</p>
         </div>
-        <button v-if="s.server?.restartSupported" type="button" class="btn btn-quiet-danger" :disabled="restartBusy || status.stale.value" data-testid="button-restart" @click="onRestart">
+        <button type="button" class="btn btn-quiet-danger" :disabled="!restartCapability.supported || restartBusy || status.stale.value || restart.phase === 'unsupported'" :title="restartCapability.supported ? undefined : restartCapability.text" data-testid="button-restart" @click="onRestart">
           <RefreshCw v-if="restartBusy" class="spin" aria-hidden="true" /><Power v-else aria-hidden="true" />重启服务
         </button>
       </div>
@@ -304,6 +321,7 @@ const RESTART_TEXT = {
 .restart-status { padding-top: 0; }
 .dim { opacity: 0.72; transition: opacity 200ms; }
 .warn-text { color: var(--color-warning); margin-top: var(--space-3); }
+.service-capabilities { margin-top: var(--space-4); }
 @media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid-2 { grid-template-columns: 1fr; } }
 @media (max-width: 480px) { .kpis { grid-template-columns: 1fr; } }
 </style>

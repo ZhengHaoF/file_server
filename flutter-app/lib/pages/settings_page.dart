@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
@@ -29,7 +30,6 @@ class _SettingsPageState extends State<SettingsPage> {
   late bool _viewOriginalImage;
   late bool _videoThumbnail;
   late String _serverBaseUrl;
-  final _restartPwdController = TextEditingController();
 
   @override
   void initState() {
@@ -50,12 +50,6 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (e) {
       _themeColor = const Color(0xFFf6823b);
     }
-  }
-
-  @override
-  void dispose() {
-    _restartPwdController.dispose();
-    super.dispose();
   }
 
   void _saveSettings() {
@@ -211,30 +205,17 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  void _restartServer() async {
-    final pwd = _restartPwdController.text;
-    if (pwd.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('请输入密码')));
-      return;
-    }
-
+  Future<void> _openAdmin() async {
     try {
-      final result = await _apiService.restartServer(pwd);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(result['msg'] ?? '操作完成')));
+      final uri = _apiService.adminUri;
+      if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+        throw Exception('无法打开管理后台，请在浏览器中访问 $uri');
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
-        final msg = e is Exception
-            ? e.toString().replaceFirst('Exception: ', '')
-            : e.toString();
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(msg)));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('无法打开管理后台，请在浏览器中访问 ${_apiService.adminUri}')),
+        );
       }
     }
   }
@@ -392,7 +373,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _restoreDefaults,
                   ),
-                  _buildRestartTile(),
+                  _buildAdminTile(),
                   ListTile(
                     title: const Text('网络诊断日志'),
                     leading: const Icon(Icons.bug_report_outlined),
@@ -546,40 +527,12 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  Widget _buildRestartTile() {
+  Widget _buildAdminTile() {
     return ListTile(
-      title: const Text('重启服务器'),
-      trailing: SizedBox(
-        width: 160,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _restartPwdController,
-                decoration: const InputDecoration(
-                  hintText: '密码',
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 8,
-                  ),
-                ),
-                obscureText: true,
-              ),
-            ),
-            const SizedBox(width: 8),
-            ElevatedButton(
-              onPressed: _restartServer,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('重启'),
-            ),
-          ],
-        ),
-      ),
+      title: const Text('服务管理'),
+      subtitle: const Text('在管理后台查看日志、配置与重启能力；需要管理会话。'),
+      trailing: const Icon(Icons.open_in_new),
+      onTap: _openAdmin,
     );
   }
 }

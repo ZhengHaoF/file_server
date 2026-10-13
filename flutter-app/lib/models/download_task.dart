@@ -1,5 +1,37 @@
 import 'dart:convert';
 
+// Native downloads use the current same-origin Authorization header. Tickets
+// must not survive in the persisted queue, including records from old releases.
+String credentialFreeDownloadUrl(String value) {
+  final uri = Uri.tryParse(value);
+  if (uri == null) return '';
+  const credentials = {
+    'ticket',
+    'readticket',
+    'token',
+    'sessiontoken',
+    'authorization',
+    'password',
+    'accesstoken',
+  };
+  final query = Map<String, List<String>>.from(uri.queryParametersAll)
+    ..removeWhere((key, _) => credentials.contains(key.toLowerCase()));
+  return uri
+      .replace(userInfo: '', fragment: '', queryParameters: query)
+      .toString();
+}
+
+String? safeDownloadError(String? value) {
+  if (value != null &&
+      RegExp(
+        r'bearer\s|(?:ticket|token|password|authorization)=',
+        caseSensitive: false,
+      ).hasMatch(value)) {
+    return '下载失败，请检查连接与授权后重试';
+  }
+  return value;
+}
+
 enum AppDownloadStatus {
   enqueued,
   downloading,
@@ -25,7 +57,7 @@ class AppDownloadTask {
 
   AppDownloadTask({
     required this.id,
-    required this.url,
+    required String url,
     required this.fileName,
     required this.filePath,
     this.savePath = '',
@@ -36,7 +68,8 @@ class AppDownloadTask {
     this.fileSize = 0,
     DateTime? createdAt,
     this.completedAt,
-  }) : createdAt = createdAt ?? DateTime.now();
+  }) : url = credentialFreeDownloadUrl(url),
+       createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -45,7 +78,7 @@ class AppDownloadTask {
     'filePath': filePath,
     'savePath': savePath,
     'savedUri': savedUri,
-    'errorMsg': errorMsg,
+    'errorMsg': safeDownloadError(errorMsg),
     'progress': progress,
     'status': status.index,
     'fileSize': fileSize,
@@ -61,7 +94,7 @@ class AppDownloadTask {
       filePath: json['filePath'] ?? '',
       savePath: json['savePath'] ?? '',
       savedUri: json['savedUri'],
-      errorMsg: json['errorMsg'],
+      errorMsg: safeDownloadError(json['errorMsg']),
       progress: (json['progress'] as num?)?.toDouble() ?? 0.0,
       status: AppDownloadStatus.values[json['status'] ?? 0],
       fileSize: json['fileSize'] ?? 0,

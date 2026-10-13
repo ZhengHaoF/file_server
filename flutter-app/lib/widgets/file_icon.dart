@@ -1,4 +1,3 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../utils/file_type_utils.dart';
 
@@ -23,27 +22,27 @@ class FileIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isDirectory) {
-      return Icon(
-        Icons.folder,
-        size: size,
-        color: color ?? Colors.amber,
-      );
+      return Icon(Icons.folder, size: size, color: color ?? Colors.amber);
     }
 
     if (showImagePreview && imageSrc != null && imageSrc!.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(4),
-        child: CachedNetworkImage(
-          imageUrl: imageSrc!,
+        // Keep authenticated previews in memory only. Disk cache metadata would
+        // otherwise persist the short-lived readTicket embedded in this URL.
+        child: Image.network(
+          imageSrc!,
           width: size,
           height: size,
           fit: BoxFit.cover,
-          placeholder: (context, url) => Icon(
-            _getIconData(),
-            size: size * 0.6,
-            color: color ?? _getIconColor(),
-          ),
-          errorWidget: (context, url, error) => Icon(
+          loadingBuilder: (context, child, progress) => progress == null
+              ? child
+              : Icon(
+                  _getIconData(),
+                  size: size * 0.6,
+                  color: color ?? _getIconColor(),
+                ),
+          errorBuilder: (context, error, stackTrace) => Icon(
             _getIconData(),
             size: size * 0.6,
             color: color ?? _getIconColor(),
@@ -52,11 +51,7 @@ class FileIcon extends StatelessWidget {
       );
     }
 
-    return Icon(
-      _getIconData(),
-      size: size,
-      color: color ?? _getIconColor(),
-    );
+    return Icon(_getIconData(), size: size, color: color ?? _getIconColor());
   }
 
   IconData _getIconData() {

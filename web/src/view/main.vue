@@ -173,14 +173,12 @@
 
           <van-cell-group title="系统操作">
             <van-cell title="清空缓存" is-link @click="clearCache" />
-            <van-cell title="重启服务器">
+            <van-cell title="服务管理">
               <template #value>
-                <div class="restart-server">
-                  <input type="password" class="PxInput" v-model="restartTheServerPwd" placeholder="管理令牌" autocomplete="off" />
-                  <van-button size="small" type="danger" @click="restartTheServer">重启</van-button>
-                </div>
+                <a :href="adminUrl(serverBaseUrl)" target="_blank" rel="noopener noreferrer">打开管理后台</a>
               </template>
             </van-cell>
+            <van-cell title="重启、日志与配置在管理后台处理；仅支持在线重启的部署会开放重启操作。" />
           </van-cell-group>
 
           <div class="settings-footer">
@@ -261,7 +259,7 @@
 <script setup>
 import {AllApplication, ListBottom, SettingTwo, Upload as UploadIcon} from "@icon-park/vue-next";
 import {computed, nextTick, onMounted, onUnmounted, ref, watch} from "vue";
-import {fileApi as axios, authenticate, ensureTicket, fileUrl, previewUrl} from "@/tools/fileApi";
+import {fileApi as axios, authenticate, ensureTicket, fileUrl, previewUrl, adminUrl, listUrl} from "@/tools/fileApi";
 import {onBeforeRouteUpdate, useRoute, useRouter} from "vue-router";
 import {showImagePreview, showLoadingToast, showToast} from 'vant';
 import ImageTable from "@/components/ImageTable.vue";
@@ -877,8 +875,7 @@ const getFileList = async () => {
         const data = [];
         let start = 0;
         do {
-          const res = await axios.get(`${serverBaseUrl.value}/list/${encodeURIComponent(requestedPath || '$')}`,
-            { params: { sta: start, end: start + 500 } });
+          const res = await axios.get(listUrl(serverBaseUrl.value, requestedPath, start, start + 500));
           if (!Array.isArray(res.data?.list)) throw new Error('文件列表格式不匹配');
           data.push(...res.data.list);
           const next = res.data.nextStart;
@@ -975,22 +972,6 @@ const clearCache = () => {
   location.reload();
 }
 
-
-const restartTheServerPwd = ref("");
-const restartTheServer = () => {
-  axios.post(`${serverBaseUrl.value}/restartServer`, {
-    pwd: restartTheServerPwd.value
-  }).then((res) => {
-    if (res.data.msg === "开始重启") {
-      router.replace({
-        name:"Home"
-      })
-    } else {
-      alert(res.data.msg)
-    }
-  })
-
-}
 
 const onlyShowImages = ref(false);
 const viewOriginalImage = ref(false);
@@ -1123,11 +1104,6 @@ onUnmounted(() => {
     overflow-y: auto;
     padding: 12px 0;
 
-    .restart-server {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
   }
 
   .settings-footer {

@@ -1,0 +1,31 @@
+services:
+  file-server:
+    build:
+      context: ..
+      dockerfile: server-rust/Dockerfile
+    restart: unless-stopped
+    # Loopback on host by default. Put a TLS reverse proxy in front for remote access.
+    ports:
+      - "127.0.0.1:3000:3000"
+    read_only: true
+    mem_limit: 1g
+    pids_limit: 128
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+    volumes:
+      - "${FILE_SERVER_SHARE:?Set FILE_SERVER_SHARE to your absolute share directory}:/app/files:ro"
+      - data:/var/lib/file-serve/data
+      - cache:/var/lib/file-serve/cache
+    environment:
+      FILE_SERVER_HOST: 0.0.0.0
+      FILE_SERVER_PORT: 3000
+      FILE_SERVER_MANAGED: "1"
+      FILE_SERVER_DEPLOYMENT: docker
+volumes:
+  data:
+  cache:

@@ -1,0 +1,18 @@
+{
+  "rootPath": "./files",
+  "dataPath": "./data",
+  "imgCache": "./data/cache",
+  "staticDir": "./static",
+  "host": "127.0.0.1",
+  "port": 3000,
+  "httpsEnabled": false,
+  "publicRead": false,
+  "writeEnabled": false,
+  "uploadEnabled": false,
+  "uploadMaxSizeMB": 4096,
+  "allowedOrigins": [],
+  "secureCookies": false,
+  "cacheMaxSizeMB": 0,
+  "cacheRetentionDays": 30,
+  "autoCleanupEnabled": false
+}

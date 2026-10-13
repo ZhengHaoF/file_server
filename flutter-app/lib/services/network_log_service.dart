@@ -121,15 +121,9 @@ class NetworkLogService extends ChangeNotifier {
   }
 
   bool _isImageRequest(String url) {
-    final lower = url.toLowerCase();
-    return lower.contains('!') && lower.contains('x') && _looksLikeImage(lower);
-  }
-
-  bool _looksLikeImage(String lowerUrl) {
-    const exts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg'];
-    for (final ext in exts) {
-      if (lowerUrl.contains(ext)) return true;
-    }
-    return false;
+    final uri = Uri.tryParse(url);
+    return uri != null &&
+        uri.path.endsWith('/api/v2/preview') &&
+        uri.queryParameters['kind'] == 'image';
   }
 }

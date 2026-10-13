@@ -82,7 +82,7 @@ onMounted(() => {
         <div class="field">
           <label class="field-label" for="token">管理令牌</label>
           <div class="pw">
-            <input id="token" ref="input" v-model="token" class="input mono" :class="{ invalid: fieldError }" :type="reveal ? 'text' : 'password'" autocomplete="current-password" spellcheck="false" :aria-invalid="!!fieldError" aria-describedby="token-error" data-testid="input-token" />
+            <input id="token" ref="input" v-model="token" class="input mono" :class="{ invalid: fieldError }" :type="reveal ? 'text' : 'password'" autocomplete="off" spellcheck="false" :aria-invalid="!!fieldError" aria-describedby="token-error" data-testid="input-token" />
             <button type="button" class="btn btn-ghost btn-icon reveal" :aria-label="reveal ? '隐藏令牌' : '显示令牌'" :aria-pressed="reveal" data-testid="button-reveal" @click="reveal = !reveal">
               <EyeOff v-if="reveal" /><Eye v-else />
             </button>

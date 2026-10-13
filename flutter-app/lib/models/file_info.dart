@@ -1,3 +1,5 @@
+import '../utils/file_urls.dart';
+
 class FileInfo {
   final String name;
   final String? suffix;
@@ -44,16 +46,11 @@ class FileInfo {
     String? fileUrl;
     final filePath = currentPath.isNotEmpty ? '$currentPath/$name' : name;
     if (!isDirectory) {
-      final encodedPath = filePath
-          .split('/')
-          .map(Uri.encodeComponent)
-          .join('/');
-      fileUrl = '$serverBaseUrl/getFile/$encodedPath';
-      if (readTicket != null && readTicket.isNotEmpty) {
-        fileUrl = Uri.parse(
-          fileUrl,
-        ).replace(queryParameters: {'ticket': readTicket}).toString();
-      }
+      fileUrl = contentUri(
+        serverBaseUrl,
+        filePath,
+        readTicket: readTicket,
+      ).toString();
     }
 
     return FileInfo(

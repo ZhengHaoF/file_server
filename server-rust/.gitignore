@@ -1,0 +1,10 @@
+/target
+/data
+/files
+/static
+/cert
+config.local.json
+auth.local.json
+*.db
+*.db-wal
+*.db-shm

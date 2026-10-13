@@ -120,7 +120,7 @@ const liveCount = ref(0)
 
 function matches(e) {
   if (filters.level && String(e.level || '').toLowerCase() !== filters.level) return false
-  if (filters.source && e.source && e.source !== filters.source) return false
+  if (filters.source && (e.source || 'application') !== filters.source) return false
   if (filters.keyword) {
     const k = filters.keyword.toLowerCase()
     if (!String(e.message || '').toLowerCase().includes(k) && !String(e.category || '').toLowerCase().includes(k)) return false
@@ -163,7 +163,8 @@ watch(liveEnabled, (on) => {
 
 function flushBuffer() {
   if (!buffer.value.length) return
-  rows.value = buffer.value.concat(rows.value).slice(0, MAX_ROWS)
+  const visible = new Set(rows.value.map(logKey))
+  rows.value = buffer.value.filter((e) => matches(e) && !visible.has(logKey(e))).concat(rows.value).slice(0, MAX_ROWS)
   buffer.value = []
 }
 function togglePause() { paused.value = !paused.value; if (!paused.value) flushBuffer() }

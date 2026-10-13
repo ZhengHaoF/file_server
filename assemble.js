@@ -1,4 +1,4 @@
-// assemble.js - 构建 web 与 admin，并把构建产物同步到 server/ 下后端托管的位置
+// assemble.js - build production web/admin for the Rust backend.
 // 用法：npm run assemble（等价 node assemble.js）
 const { execSync } = require('node:child_process');
 const fs = require('node:fs');
@@ -26,14 +26,11 @@ try {
   // 2. 构建 admin 管理面板（vite 输出 admin/dist）
   run('npm run build', path.join(root, 'admin'));
 
-  // 3. 同步产物到后端托管位置：
-  //    - server/web/          用户前端（express.static('web')）
-  //    - server/admin/dist/   管理面板（仅在进程启动时挂载一次）
-  syncDir(path.join(root, 'web', 'dist'), path.join(root, 'server', 'web'));
-  syncDir(path.join(root, 'admin', 'dist'), path.join(root, 'server', 'admin', 'dist'));
+  // Rust is the only backend; both production clients ship under static/.
+  syncDir(path.join(root, 'web', 'dist'), path.join(root, 'server-rust', 'static', 'web'));
+  syncDir(path.join(root, 'admin', 'dist'), path.join(root, 'server-rust', 'static', 'admin'));
 
-  console.log('[assemble] 完成：server/web 与 server/admin/dist 已更新');
-  console.log('[assemble] 提示：若后端正在运行，请重启 server（admin 面板只在启动时挂载一次）');
+  console.log('[assemble] 完成：server-rust/static/web 与 static/admin 已更新');
 } catch (err) {
   console.error(`[assemble] 失败: ${err.message}`);
   process.exit(1);

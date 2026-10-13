@@ -19,7 +19,7 @@ export function useFilePath() {
   };
 
   const isRoot = computed(() => {
-    return currentPath.value === '' || currentPath.value === '$';
+    return currentPath.value === '';
   });
 
   const pathSegments = computed(() => {

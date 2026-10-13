@@ -31,11 +31,31 @@ function copyStatic(source, destination) {
     }
 }
 
+// Media CLI tools staged under server-rust/tools/<platform>-<arch> ship as a
+// flat tools/ directory next to the executable; the server resolves them from
+// there before PATH. Symlinks and non-regular files are refused, matching the
+// static-asset rules. Missing staging directory = package without tools.
+function copyTools(source, destination) {
+    const stat = fs.lstatSync(source);
+    if (stat.isSymbolicLink()) throw new Error(`媒体工具不能包含软链接: ${source}`);
+    if (stat.isDirectory()) {
+        fs.mkdirSync(destination, { recursive: true });
+        for (const name of fs.readdirSync(source)) {
+            copyTools(path.join(source, name), path.join(destination, name));
+        }
+    } else if (stat.isFile()) {
+        fs.copyFileSync(source, destination);
+    } else {
+        throw new Error(`媒体工具不是普通文件: ${source}`);
+    }
+}
+
 function buildDistribution(root = path.resolve(__dirname, '..'), {
     archive = true,
     platform = process.platform,
     architecture = process.arch,
     binaryPath,
+    toolsDir,
 } = {}) {
     const server = path.join(root, 'server-rust');
     const executable = platform === 'win32' ? 'file-server.exe' : 'file-server';
@@ -47,6 +67,18 @@ function buildDistribution(root = path.resolve(__dirname, '..'), {
     if (!fs.lstatSync(binary).isFile() || fs.lstatSync(binary).isSymbolicLink()) {
         throw new Error('Rust 可执行文件必须是普通文件');
     }
+    // Optional bundled media tools: flat layout expected (vips/ffmpeg + DLLs).
+    const toolsSource = toolsDir || path.join(server, 'tools', `${platform}-${architecture}`);
+    const toolsBundled = fs.existsSync(toolsSource);
+    if (toolsBundled) {
+        const suffix = platform === 'win32' ? '.exe' : '';
+        for (const name of ['vips', 'vipsheader', 'ffmpeg']) {
+            const tool = path.join(toolsSource, `${name}${suffix}`);
+            if (!fs.existsSync(tool)) {
+                throw new Error(`媒体工具目录缺少 ${path.basename(tool)}，请平铺暂存到 server-rust/tools/${platform}-${architecture}/`);
+            }
+        }
+    }
     const dist = path.join(root, 'dist', `file-serve-rust-${platform}-${architecture}`);
     const temporary = `${dist}.tmp-${process.pid}`;
     fs.rmSync(temporary, { recursive: true, force: true });
@@ -54,6 +86,7 @@ function buildDistribution(root = path.resolve(__dirname, '..'), {
         fs.mkdirSync(temporary, { recursive: true });
         fs.copyFileSync(binary, path.join(temporary, executable));
         if (platform !== 'win32') fs.chmodSync(path.join(temporary, executable), 0o755);
+        if (toolsBundled) copyTools(toolsSource, path.join(temporary, 'tools'));
         copyStatic(path.join(server, 'static'), path.join(temporary, 'static'));
         const readme = fs.readFileSync(path.join(server, 'README.md'), 'utf8');
         fs.writeFileSync(path.join(temporary, 'README.md'),
@@ -106,7 +139,9 @@ function buildDistribution(root = path.resolve(__dirname, '..'), {
     } finally {
         if (fs.existsSync(archiveTemporary)) fs.rmSync(archiveTemporary);
     }
-    console.log(`[pack:rust] ${output}; 媒体预览需要目标机安装 libvips CLI 与 FFmpeg。`);
+    console.log(`[pack:rust] ${output}; ${toolsBundled
+        ? '已附带媒体工具 (tools/)，目标机器无需安装 libvips CLI 与 FFmpeg。'
+        : '媒体预览需要目标机安装 libvips CLI 与 FFmpeg。'}`);
     return output;
 }
 

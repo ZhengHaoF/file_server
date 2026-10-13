@@ -52,6 +52,8 @@ Compose 默认只把端口绑定到宿主机 `127.0.0.1:3000`，共享目录以 
 
 ## 分发注意
 
-`npm run assemble && npm run build:server && npm run pack` 在仓库根目录生成对应平台安装包。安装包不含 libvips/FFmpeg，需要目标机器自行安装，或通过 `FILE_SERVER_VIPS`、`FILE_SERVER_VIPSHEADER`、`FILE_SERVER_FFMPEG` 指定可执行文件；缺失对应工具时相关预览失败，而不是假报成功。
+`npm run assemble && npm run build:server && npm run pack` 在仓库根目录生成对应平台安装包。安装包默认不含 libvips/FFmpeg，目标机器需自行安装，或通过 `FILE_SERVER_VIPS`、`FILE_SERVER_VIPSHEADER`、`FILE_SERVER_FFMPEG` 指定可执行文件；缺失对应工具时相关预览失败，而不是假报成功。
 
-Windows、ARM NAS 和不同媒体编码的实际运行需在目标设备验证；Linux 构建通过不代表所有平台都已验收。当前仓库已移除旧 Node 后端，但不自动删除部署机器上的旧服务目录、旧缓存或用户共享文件；旧版回退须从 Git 历史检出完整版本。
+也可以把媒体工具**平铺暂存**到 `server-rust/tools/<platform>-<arch>/`（例如 `server-rust/tools/win32-x64/` 直接放 `vips.exe`、`vipsheader.exe`、`ffmpeg.exe` 及其依赖 DLL，不放子目录），再执行 `npm run pack`，工具会随包分发为 `tools/` 目录。服务端按以下顺序解析工具：环境变量覆盖 → 可执行文件同级的 `tools/` 目录 → PATH；三者都找不到时预览返回 `PREVIEW_UNAVAILABLE`，其余功能不受影响。该暂存目录已被 git 忽略，二进制不要提交；`pack` 会拒绝暂存目录中的软链接，缺任一本体工具时立即失败。
+
+再分发 FFmpeg 需遵守其许可证：GPL 构建（如含 x264/x265 的 full build）随包分发须履行 GPL 义务，对外分发建议换 LGPL 构建；libvips 为 LGPL，动态链接分发即可。Windows、ARM NAS 和不同媒体编码的实际运行需在目标设备验证；Linux 构建通过不代表所有平台都已验收。当前仓库已移除旧 Node 后端，但不自动删除部署机器上的旧服务目录、旧缓存或用户共享文件；旧版回退须从 Git 历史检出完整版本。

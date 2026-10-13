@@ -21,6 +21,7 @@ fn round1(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
 }
 
+#[cfg(unix)]
 const GB: f64 = 1024.0 * 1024.0 * 1024.0;
 
 pub fn disk(path: &Path) -> Value {

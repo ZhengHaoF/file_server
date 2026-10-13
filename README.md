@@ -6,7 +6,7 @@
 
 ## 构建与运行
 
-源码构建需要 Rust stable（锁定依赖至少需要 1.89）、Node.js 22，以及图片/视频预览所需的 libvips 命令行工具和 FFmpeg。Node 只用于构建前端；分发后的 Rust 服务本身不依赖 Node。
+源码构建需要 Rust stable（锁定依赖至少需要 1.89）、Node.js 22，以及图片/视频预览所需的 libvips 命令行工具和 FFmpeg。Node 只用于构建前端；分发后的 Rust 服务本身不依赖 Node。安装包可选附带媒体工具（暂存到 `server-rust/tools/<平台>-<架构>/` 后打包），见 [Rust 服务说明](server-rust/README.md)。
 
 ```bash
 git clone https://github.com/ZhengHaoF/file_server.git
@@ -51,6 +51,6 @@ npm run build:server
 npm run pack
 ```
 
-黑盒验收只对独立临时目录运行。`npm run pack` 按当前编译平台打包 Rust 可执行文件和生产前端，输出 `dist/file-serve-rust-<平台>-<架构>.tar.gz` 或 `.zip`；跨平台必须在对应平台构建，媒体工具仍需安装在目标机器。
+黑盒验收只对独立临时目录运行。`npm run pack` 按当前编译平台打包 Rust 可执行文件和生产前端，输出 `dist/file-serve-rust-<平台>-<架构>.tar.gz` 或 `.zip`；跨平台必须在对应平台构建。未暂存媒体工具的包仍需目标机器安装 libvips 和 FFmpeg，暂存后则随包分发。
 
 `npm run dev:server` 启动 Rust 开发服务，`dev:web` 和 `dev:admin` 启动前端开发环境。CI 包含 Rust 检查/测试、Linux 分发、Windows 构建、Docker 启动检查及 Web/Flutter 检查；前端和打包脚本仍需要 Node，但不再存在 Node 服务入口。

@@ -3,6 +3,7 @@
 /files
 /static
 /cert
+/tools
 config.local.json
 auth.local.json
 *.db

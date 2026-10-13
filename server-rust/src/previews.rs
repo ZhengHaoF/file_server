@@ -1,5 +1,9 @@
 //! JPEG thumbnails via the libvips CLI and FFmpeg subprocesses.
 //!
+//! Tool lookup order: `FILE_SERVER_VIPS`/`FILE_SERVER_VIPSHEADER`/
+//! `FILE_SERVER_FFMPEG` overrides, then `tools/` next to the executable
+//! (distribution packages may bundle the CLI tools), then PATH.
+//!
 //! * bounded concurrency and bounded pending queue per kind (429 when full)
 //! * per-process timeout; children are killed on timeout or drop
 //! * same-key requests share one generation, which runs in its own task so a
@@ -35,12 +39,37 @@ pub struct Tools {
     pub ffmpeg: String,
 }
 
+/// Locate a media tool shipped next to the executable (`<exe_dir>/tools/`).
+/// Distribution packages may bundle the CLI tools there so target machines
+/// need no separate install; `None` when the package ships without tools.
+fn bundled_tool(base: &Path, name: &str) -> Option<PathBuf> {
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    let candidate = base.join("tools").join(format!("{name}{suffix}"));
+    candidate.is_file().then_some(candidate)
+}
+
+/// Resolve one media tool: explicit env override wins, then the `tools/`
+/// directory next to the executable, then whatever the OS finds on PATH.
+fn resolve_tool(env: &crate::config::Env, key: &str, name: &str) -> String {
+    if let Some(value) = env.get(key) {
+        return value.to_string();
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            if let Some(found) = bundled_tool(dir, name) {
+                return found.display().to_string();
+            }
+        }
+    }
+    name.to_string()
+}
+
 impl Tools {
     pub fn from_env(env: &crate::config::Env) -> Self {
         Self {
-            vips: env.get("FILE_SERVER_VIPS").unwrap_or("vips").to_string(),
-            vipsheader: env.get("FILE_SERVER_VIPSHEADER").unwrap_or("vipsheader").to_string(),
-            ffmpeg: env.get("FILE_SERVER_FFMPEG").unwrap_or("ffmpeg").to_string(),
+            vips: resolve_tool(env, "FILE_SERVER_VIPS", "vips"),
+            vipsheader: resolve_tool(env, "FILE_SERVER_VIPSHEADER", "vipsheader"),
+            ffmpeg: resolve_tool(env, "FILE_SERVER_FFMPEG", "ffmpeg"),
         }
     }
 }
@@ -516,5 +545,29 @@ mod tests {
         let k3 = preview_key(&file, &std::fs::metadata(&file).unwrap(), "image:1x1");
         assert_ne!(k1, k2);
         assert_ne!(k1, k3);
+    }
+
+    #[test]
+    fn bundled_tools_directory_is_optional() {
+        let dir = tempfile::tempdir().unwrap();
+        // Packages without a tools/ directory fall back to PATH resolution.
+        assert_eq!(bundled_tool(dir.path(), "vips"), None);
+        // A staged tool next to the executable wins over PATH lookup.
+        let suffix = if cfg!(windows) { ".exe" } else { "" };
+        let tools = dir.path().join("tools");
+        std::fs::create_dir_all(&tools).unwrap();
+        let vips = tools.join(format!("vips{suffix}"));
+        std::fs::write(&vips, "tool").unwrap();
+        assert_eq!(bundled_tool(dir.path(), "vips"), Some(vips));
+        assert_eq!(bundled_tool(dir.path(), "ffmpeg"), None);
+    }
+
+    #[test]
+    fn env_override_beats_bundled_tools() {
+        let env = crate::config::Env::default();
+        assert_eq!(resolve_tool(&env, "FILE_SERVER_VIPS", "vips"), "vips");
+        let env = env.with("FILE_SERVER_VIPS", "/custom/vips");
+        assert_eq!(resolve_tool(&env, "FILE_SERVER_VIPS", "vips"), "/custom/vips");
+        assert_eq!(resolve_tool(&env, "FILE_SERVER_FFMPEG", "ffmpeg"), "ffmpeg");
     }
 }

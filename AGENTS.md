@@ -44,7 +44,7 @@ npm run build:server
 npm run pack
 ```
 
-`assemble.js`只同步两个生产前端到 `server-rust/static/`。`scripts/pack-rust.cjs`只分发当前平台Rust二进制、前端和安全模板，缺产物立即失败；目标机器需有libvips、vipsheader和FFmpeg。
+`assemble.js`只同步两个生产前端到 `server-rust/static/`。`scripts/pack-rust.cjs`只分发当前平台Rust二进制、前端和安全模板，缺产物立即失败；媒体工具可选：平铺暂存到 `server-rust/tools/<平台>-<架构>/`（git忽略，含vips、vipsheader、ffmpeg及依赖DLL）即随包分发为 `tools/`，服务端按环境变量、exe同级 `tools/`、PATH顺序解析，暂存缺本体或含软链接时打包失败；未暂存的包目标机器需自备libvips和FFmpeg，再分发FFmpeg须遵守其许可证（对外用LGPL构建）。
 
 Flutter改动须执行 `flutter analyze` 与全套 `flutter test`。当前 `dart:io` 路径不是完整Flutter Web适配。
 

@@ -1,6 +1,6 @@
 # Rust 服务契约（server-rust）
 
-> 正式契约（server-rust 0.2.0）。与 Node 版 `server/` 的差异与迁移说明见文末。
+> 正式契约（server-rust 0.2.0）。Rust 是当前唯一后端；旧 Node 实现仅存在于 Git 历史，与历史版的差异与迁移说明见文末。
 
 ## 二进制与命令行
 

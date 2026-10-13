@@ -1,9 +1,0 @@
-node_modules
-web
-admin
-coverage
-dist
-package-lock.json
-mime.json
-config.json
-logs

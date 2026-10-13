@@ -13,10 +13,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm --prefix server ci
       - run: npm --prefix web ci
       - run: npm --prefix admin ci
-      - run: npm --prefix server run check
+      - run: npm run test:repository
       - run: npm --prefix web test -- --run
       - run: npm --prefix admin test -- --run
       - run: npm run assemble

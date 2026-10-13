@@ -2,7 +2,7 @@
 
 面向 NAS 图片与视频浏览的文件服务。新的默认服务端使用 Rust，独立提供 HTTP API，并在同一地址托管 Web 文件客户端和 `/admin/` 管理后台；不需要 Tauri、桌面窗口或运行时 Node.js。前端仍使用 Vue，原生客户端仍使用 Flutter。
 
-这次迁移把服务运行、管理、媒体任务和安全边界集中到后端，不把语言重写当作性能提升的保证。新版文件读取使用显式路径与预览参数的 v2 API，修复 `$` 根目录标记和 `!尺寸` 文件名重载的歧义；旧 Node 实现暂时保留在 `server/` 用于对照测试，回退需使用迁移前的完整版本和对应客户端，见 [旧 Node 服务](docs/LEGACY_NODE.md)。
+这次迁移把服务运行、管理、媒体任务和安全边界集中到后端，不把语言重写当作性能提升的保证。新版文件读取使用显式路径与预览参数的 v2 API，修复 `$` 根目录标记和 `!尺寸` 文件名重载的歧义。旧 Node 后端与专用打包入口已移除；如需回退，使用 Git 历史中的完整旧版本及对应客户端，见 [迁移与回退说明](docs/RUST_MIGRATION.md)。
 
 ## 构建与运行
 
@@ -45,6 +45,7 @@ npm run test:rust:security
 npm --prefix web test -- --run
 npm --prefix admin test -- --run
 npm run test:distribution
+npm run test:repository
 npm run assemble
 npm run build:server
 npm run pack
@@ -52,4 +53,4 @@ npm run pack
 
 黑盒验收只对独立临时目录运行。`npm run pack` 按当前编译平台打包 Rust 可执行文件和生产前端，输出 `dist/file-serve-rust-<平台>-<架构>.tar.gz` 或 `.zip`；跨平台必须在对应平台构建，媒体工具仍需安装在目标机器。
 
-`npm run dev:server` 启动 Rust 开发服务；`npm run dev:legacy` 仅供原 Node API 对照，不应配本版 v2 客户端部署。CI 包含 Rust 检查/测试、Linux 分发、Windows 构建、Docker 启动检查及现有 Web/Flutter 检查，不把未完成的远端工作流当作本地验证结果。
+`npm run dev:server` 启动 Rust 开发服务，`dev:web` 和 `dev:admin` 启动前端开发环境。CI 包含 Rust 检查/测试、Linux 分发、Windows 构建、Docker 启动检查及 Web/Flutter 检查；前端和打包脚本仍需要 Node，但不再存在 Node 服务入口。

@@ -54,4 +54,4 @@ Compose 默认只把端口绑定到宿主机 `127.0.0.1:3000`，共享目录以 
 
 `npm run assemble && npm run build:server && npm run pack` 在仓库根目录生成对应平台安装包。安装包不含 libvips/FFmpeg，需要目标机器自行安装，或通过 `FILE_SERVER_VIPS`、`FILE_SERVER_VIPSHEADER`、`FILE_SERVER_FFMPEG` 指定可执行文件；缺失对应工具时相关预览失败，而不是假报成功。
 
-Windows、ARM NAS 和不同媒体编码的实际运行需在目标设备验证；Linux 构建通过不代表所有平台都已验收。旧 Node 服务、旧缓存和用户共享文件不会被迁移脚本自动删除。
+Windows、ARM NAS 和不同媒体编码的实际运行需在目标设备验证；Linux 构建通过不代表所有平台都已验收。当前仓库已移除旧 Node 后端，但不自动删除部署机器上的旧服务目录、旧缓存或用户共享文件；旧版回退须从 Git 历史检出完整版本。

@@ -10,4 +10,4 @@
 - 图片预览：`GET /api/v2/preview?path=<相对原始路径>&kind=image&width=320&height=320`。
 - 视频截图：`GET /api/v2/preview?path=<相对原始路径>&kind=video`。
 
-统一 URL helper 在 `src/tools/fileApi.js`；路径只由 query encoder 编码一次，不先手工 URL 编码。cookie/Bearer 与只读 `ticket` 认证不变，写入接口保留。服务管理入口打开独立 `/admin/`，不传递凭据。使用旧 Node 服务时请配套旧版客户端。
+统一 URL helper 在 `src/tools/fileApi.js`；路径只由 query encoder 编码一次，不先手工 URL 编码。cookie/Bearer 与只读 `ticket` 认证不变，写入接口保留。服务管理入口打开独立 `/admin/`，不传递凭据。旧Node后端已移除，如需回退须从Git历史检出完整旧版及对应客户端。

@@ -1,21 +1,21 @@
 # Admin rewrite contract
 
-Rust migration: `server-rust/` is the default backend. The Vue client retains this valid response model where practical, but runtime reporting must prefer `server.runtime` and `server.version`, and unavailable Node heap values are `null`. Rust-specific behavior and intentional differences are documented in `RUST_API.md`; this document's original Express-only/strict-compatibility implementation assignments below are historical, not a prohibition on authorized reform.
+`server-rust/` is the only backend. This document describes Vue management interaction requirements; exact server DTOs, units and errors are defined in [RUST_API.md](RUST_API.md). Report `server.runtime` and `server.version`; unavailable V8 heap values are `null`.
 
-This is the implementation contract for the rewritten Vue 3 admin and Express services. Keep legacy file APIs and the Web/Flutter file clients unchanged. All admin calls use HttpOnly cookies in production; optionally attach the temporary Bearer session returned at login in memory. Never persist tokens in browser storage or put credentials in URLs.
+The Vue admin and Rust services evolve together, and file clients use the v2 reading protocol. All admin calls use the `fs_admin_session` HttpOnly cookie in production; optionally attach the temporary Bearer session returned at login in memory. Never persist tokens in browser storage or put management credentials in URLs.
 
 ## Auth
 
 - `POST /api/auth/login {token}` → existing `{role,sessionToken,readTicket,expiresAt,ticketExpiresAt,...}`. Require role `admin` for the admin app.
 - `GET /api/auth/session` → `{role,expiresAt,sessionId}`. 401 means signed out; network errors must NOT be treated as signed out.
-- `POST /api/auth/logout {}` → `{msg}`; revoke server session and tickets, clear cookie.
+- `POST /api/auth/logout {role:"admin"}` → `{msg}`; revoke the admin session and tickets and clear only its cookie, preserving the file session.
 - `GET /api/admin/sessions` → `{sessions:[{id,role,createdAt,lastSeenAt,expiresAt,current,ip}]}`. IDs are public management IDs, never credentials.
 - `DELETE /api/admin/sessions/:id` → `{msg,current}`. Confirm revocation; current session revocation returns to login.
 
 ## Overview
 
 - `GET /api/admin/status` →
-  `{sampledAt,bootId,cpu:{usage:null|number,cores,warmingUp},memory:{total,free,used,usage,scope:"host"},disk:{total,used,free,usage,available,scope:"shared-filesystem"},process:{rss,heapUsed,heapTotal},server:{uptime,nodeVersion,httpPort,httpsPort,httpStatus,httpsStatus,restartSupported,deployment},queues:{image:{active,pending,limit},video:{active,pending,limit},upload:{active,pending,limit},maintenance},history:[{time,cpu:null|number,memory,processRss}],alerts:[{level,message}]}`.
+  `{sampledAt,bootId,cpu:{usage:null|number,cores,warmingUp},memory:{total,free,used,usage,scope:"host"},disk:{total,used,free,usage,available,scope:"shared-filesystem"},process:{rss,heapUsed:null,heapTotal:null},server:{uptime,runtime:"rust",version,nodeVersion:null,httpPort,httpsPort,httpStatus,httpsStatus,restartSupported,restartReason,deployment},queues:{image:{active,pending,limit},video:{active,pending,limit},upload:{active,pending,limit},maintenance},history:[{time,cpu:null|number,memory,processRss}],alerts:[{level,message}]}`.
 - Memory in MB; disk in GB; process bytes. `httpStatus/httpsStatus`: `running|disabled|stopped|error`. Unknown/offline is a CLIENT state, never inferred as stopped. Retain stale successful data and show last sample time.
 - `POST /api/admin/restart {}` → 202 `{msg,bootId}` if managed, 409 if unsupported. Confirm and poll `GET /api/auth/session`: unreachable means restarting, 401 means restored but needs sign-in. Do not claim success until reachable; timeout offers retry. Restart resets in-memory sessions.
 
@@ -30,7 +30,7 @@ This is the implementation contract for the rewritten Vue 3 admin and Express se
 
 - `GET /api/admin/jobs?limit=25&before=<integer>` → `{jobs:[{id,type,status,createdAt,startedAt,finishedAt,progress:{processed,total},result:{cleaned,freedBytes,failed},error}],nextBefore}`. Status `queued|running|succeeded|failed|interrupted`.
 - `GET /api/admin/jobs/:id` → `{job}`.
-- `GET /api/admin/audit?limit=50&before=<integer>` → `{entries:[{id,createdAt,action,actor,target,result,details}],nextBefore}`.
+- `GET /api/admin/audit?limit=50&before=<integer>` → `{entries:[{id,time,action,actor,target,result,details}],nextBefore}`.
 - These are real persisted server records, not mock chart values. UI can show jobs and audit on one Operations page with tabs. No fake cancel/retry controls.
 
 ## Logs
@@ -46,8 +46,8 @@ This is the implementation contract for the rewritten Vue 3 admin and Express se
 
 - `GET /api/admin/config` returns legacy masked top-level properties PLUS
   `{revision,values,fields:[{key,label,type:"boolean"|"number"|"string"|"origins",group,help,restartRequired,readonly,source,min?,max?}],pendingRestart:[keys],backupAvailable}`.
-- Editable keys: `rootPath,host,port,httpsEnabled,httpsPort,publicRead,writeEnabled,uploadEnabled,uploadMaxSizeMB,allowedOrigins,secureCookies,cacheMaxSizeMB,cacheRetentionDays,autoCleanupEnabled`. Runtime database/cache paths and credentials are NOT editable here.
-- Root/listen/TLS changes need restart. File switches, allowed origins, upload limit (rebuild multer per upload) and cache policy apply immediately. Environment-controlled fields are readonly.
+- Editable keys: `rootPath,host,port,httpsEnabled,httpsPort,publicRead,writeEnabled,uploadEnabled,uploadMaxSizeMB,uploadTimeoutSeconds,uploadIdleTimeoutSeconds,allowedOrigins,secureCookies,cacheMaxSizeMB,cacheRetentionDays,autoCleanupEnabled`. Runtime database/cache paths and credentials are NOT editable here.
+- Root/listen/TLS changes need restart. File switches, allowed origins, upload limits/timeouts and cache policy apply immediately. Environment-controlled fields are readonly.
 - `POST /api/admin/config/validate {revision,values}` → `{valid:true,changes:[{key,before,after,restartRequired}],warnings:[string]}`. Invalid 400 `{msg,errors:{key:message}}`; stale revision 409.
 - `PUT /api/admin/config {revision,values}` → `{msg,config:<same as GET>,changes}`. Validate before atomic private file save; confirm diff before sending; preserve noneditable/secret existing fields, never serialize masked secrets. Overrides live in dataPath/admin-config.local.json (loaded after config.local.json, before env); keep one rollback file beside it outside share root, mode 0600.
 - `POST /api/admin/config/rollback {revision}` → `{msg,config}`. Confirmation required; validate backup and revision.

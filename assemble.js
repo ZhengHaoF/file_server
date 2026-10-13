@@ -26,8 +26,7 @@ try {
   // 2. 构建 admin 管理面板（vite 输出 admin/dist）
   run('npm run build', path.join(root, 'admin'));
 
-  // Node code is retained for comparison only. New clients use the v2 API;
-  // do not overwrite the historical Node assets with incompatible builds.
+  // Rust is the only backend; both production clients ship under static/.
   syncDir(path.join(root, 'web', 'dist'), path.join(root, 'server-rust', 'static', 'web'));
   syncDir(path.join(root, 'admin', 'dist'), path.join(root, 'server-rust', 'static', 'admin'));
 

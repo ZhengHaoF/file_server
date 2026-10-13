@@ -28,7 +28,8 @@
 
 - **前端**：管理端65项、Web端11项测试通过，两个生产构建通过；生产管理端未使用mock。
 - **Flutter**：`flutter analyze --no-fatal-infos --no-pub`无问题，`flutter test --no-pub`全套50项通过。此结果不等于原生应用实机验收。
-- **旧Node参考实现**：lint、格式、typecheck、62项测试通过；保留用于完整旧版本回退，不作为新客户端的可替换后端。
+- **旧Node历史验证**：迁移前lint、格式、typecheck、62项测试曾通过；旧实现随后按用户授权从当前源码移除，不再作为当前CI或服务入口。回退使用Git历史中的完整旧版。
+- **移除旧后端后复验**：Rust44项、管理端65项、Web11项、黑盒15组、安全7组、分发5项再次通过，前端重新生成；新增`npm run test:repository`2项检查退役入口、workspace及CI不再引用旧后端。Flutter代码未在清理阶段修改。
 - **Rust检查**：`npm run check:rust`中fmt检查、Clippy全target且warnings作为错误均通过，26个单元测试和18个真实TCP集成测试通过；媒体工具已安装，实际运行生成用例，不以缺少工具跳过代替通过。新增无效TLS测试确认HTTP端口不监听、数据库也不创建。
 - **独立黑盒**：release可执行文件运行`npm run test:rust:smoke`15组通过，包括真实上传冲突、Range、媒体生成、64MP源图限额、伪装HLS外部请求拦截、预置缓存链接不泄漏凭据、候选root复用启动规则、SQLite持久化和supervise真实重启。
 - **启动隔离**：release运行`npm run test:rust:security`7组通过，覆盖日志/数据库链接、TLS私钥共享路径、缓存别名拒绝不改共享权限、缺失静态目录祖先链接、私有数据根边界、无效TLS拒绝启动且监督者退出78。

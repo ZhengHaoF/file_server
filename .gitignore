@@ -30,23 +30,11 @@ _pack-*
 Thumbs.db
 
 # ==============================
-# 后端 (server/) 特有
+# 已退役的 Node 部署遗留目录
 # ==============================
 
-# 运行时生成的缓存和数据库
-server/imgCache/
-server/imgCache.db
-server/imgCache.db-*
-server/auth.local.json
-server/config.local.json
-server/admin-config*.local.json
-server/data/
-server/cert/*.local.*
-server/logs/
-
-# node 可执行文件（历史打包/捆绑方案遗留，保持忽略）
-server/node.exe
-server/node.zip
+# 当前版本不含 server/ 源码；历史运行数据只忽略，不自动删除。
+server/
 
 # ==============================
 # Flutter (flutter-app/) 特有

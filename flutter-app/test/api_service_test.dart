@@ -220,4 +220,56 @@ void main() {
       }, _LocalHttpOverrides());
     },
   );
+
+  test('ApiService 在登录、退出与切换服务器时通知监听器', () async {
+    await HttpOverrides.runWithHttpOverrides(() async {
+      SharedPreferences.setMockInitialValues({});
+      await StorageService().init();
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+
+      server.listen((request) async {
+        if (request.uri.path == '/api/auth/login') {
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(
+            jsonEncode({
+              'sessionToken': 'sess-123',
+              'readTicket': 'ticket-123',
+              'ticketExpiresAt':
+                  DateTime.now().millisecondsSinceEpoch + 3600000,
+            }),
+          );
+          await request.response.close();
+        } else if (request.uri.path == '/api/auth/logout') {
+          request.response.statusCode = 200;
+          await request.response.close();
+        }
+      });
+
+      final api = ApiService()
+        ..setServerUrl('http://127.0.0.1:${server.port}');
+
+      var notifications = 0;
+      void listener() => notifications++;
+      api.addListener(listener);
+      addTearDown(() => api.removeListener(listener));
+
+      expect(notifications, 0);
+
+      // 1. 登录成功
+      await api.login('token-abc');
+      expect(api.isLoggedIn, true);
+      expect(notifications, 1);
+
+      // 2. 退出登录
+      await api.logout();
+      expect(api.isLoggedIn, false);
+      expect(notifications, 2);
+
+      // 3. 切换服务器地址
+      api.setServerUrl('http://127.0.0.1:54321');
+      expect(notifications, 3);
+    }, _LocalHttpOverrides());
+  });
 }
+

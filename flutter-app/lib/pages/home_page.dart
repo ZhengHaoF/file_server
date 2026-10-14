@@ -74,6 +74,7 @@ class _HomePageState extends State<HomePage> {
     UploadService().addListener(_onUploadUpdate);
     DownloadService().addListener(_onTransferUpdate);
     UploadService().addListener(_onTransferUpdate);
+    _apiService.addListener(_onAuthUpdate);
     _loadFileList();
   }
 
@@ -81,10 +82,32 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _listCancel?.cancel('页面已关闭');
     _loadGeneration++;
+    _apiService.removeListener(_onAuthUpdate);
     UploadService().removeListener(_onUploadUpdate);
     UploadService().removeListener(_onTransferUpdate);
     DownloadService().removeListener(_onTransferUpdate);
     super.dispose();
+  }
+
+  void _onAuthUpdate() {
+    if (!mounted) return;
+    final loggedIn = _apiService.isLoggedIn;
+
+    if (!loggedIn) {
+      _listCancel?.cancel('已退出登录');
+      _loadGeneration++;
+      setState(() {
+        _fileList = [];
+        _currentPath = '';
+        _history.clear();
+        _history.add('');
+        _historyIndex = 0;
+        _isLoading = false;
+        _loadError = '请连接并登录文件服务';
+      });
+    } else {
+      _loadFileList();
+    }
   }
 
   void _onTransferUpdate() {
@@ -141,6 +164,9 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _isLoading = false;
         _loadError = e.toString().replaceFirst('Exception: ', '');
+        if (!_apiService.isLoggedIn) {
+          _fileList = [];
+        }
       });
     }
   }

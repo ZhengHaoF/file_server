@@ -226,6 +226,26 @@ void main() {
     },
   );
 
+  testWidgets(
+    'files becoming empty resets search and selection',
+    (tester) async {
+      await mount(
+        tester,
+        child: browser(files: [file('a.txt'), file('b.txt')]),
+      );
+      await tester.tap(find.byKey(const ValueKey('file:a.txt')));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byKey(const Key('file-search')), 'a');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('已选择'), findsOneWidget);
+
+      await tester.pumpWidget(browser(files: const [], error: '请连接并登录文件服务'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('已选择'), findsNothing);
+      expect(find.text('请连接并登录文件服务'), findsOneWidget);
+    },
+  );
+
   testWidgets('selection never moves rows under a double-click', (
     tester,
   ) async {

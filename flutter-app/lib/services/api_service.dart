@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import '../models/file_info.dart';
 import 'network_log_service.dart';
 import 'storage_service.dart';
@@ -6,7 +7,7 @@ import 'token_store.dart';
 import '../utils/server_address.dart';
 import '../utils/file_urls.dart';
 
-class ApiService {
+class ApiService extends ChangeNotifier {
   static final ApiService _instance = ApiService._internal();
   factory ApiService() => _instance;
 
@@ -38,11 +39,15 @@ class ApiService {
 
   void setServerUrl(String url) {
     url = normalizeServerAddress(url);
-    if (url != _serverBaseUrl) {
+    final changed = url != _serverBaseUrl;
+    if (changed) {
       _clearSession();
     }
     _serverBaseUrl = url;
     StorageService().serverBaseUrl = url;
+    if (changed) {
+      notifyListeners();
+    }
   }
 
   String get serverBaseUrl => _serverBaseUrl;
@@ -126,6 +131,7 @@ class ApiService {
       _tokenRemembered = remember;
     }
     _applySession(response.data);
+    notifyListeners();
     return _tokenRemembered;
   }
 
@@ -179,6 +185,7 @@ class ApiService {
       if (e.response?.statusCode == 401) {
         await _tokenStore.clear(origin);
         _clearSession();
+        notifyListeners();
       }
       return false;
     } catch (_) {
@@ -198,6 +205,7 @@ class ApiService {
     }
     _clearSession();
     await _tokenStore.clear(_origin);
+    notifyListeners();
   }
 
   Map<String, String> authHeadersFor(String url) {
@@ -313,6 +321,7 @@ class ApiService {
         if (hadSession && allowRelogin && await restoreSession()) {
           return _getFileList(currentPath, cancelToken, allowRelogin: false);
         }
+        if (sameServer && hadSession) notifyListeners();
         throw Exception(hadSession ? '会话已失效，请连接并登录文件服务' : '请连接并登录文件服务');
       }
       if (e.response?.statusCode == 404) {

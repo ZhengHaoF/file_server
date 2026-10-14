@@ -158,6 +158,15 @@ void main() {
     expect(find.text('已选 1 项'), findsNothing);
   });
 
+  testWidgets('files becoming empty clears selection and search', (tester) async {
+    await tester.pumpWidget(browser(autoSelectOnMore: true));
+    await tester.longPress(find.text('a.txt'));
+    await tester.pump();
+    expect(find.text('已选 1 项'), findsOneWidget);
+    await tester.pumpWidget(browser(autoSelectOnMore: true, files: []));
+    expect(find.text('已选 1 项'), findsNothing);
+  });
+
   testWidgets(
     'stale data remains, initial failure offers connection and retry',
     (tester) async {

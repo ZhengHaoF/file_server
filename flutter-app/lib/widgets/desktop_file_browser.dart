@@ -123,6 +123,11 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
       _search.clear();
       if (_scroll.hasClients) _scroll.jumpTo(0);
     }
+    if (widget.files.isEmpty && oldWidget.files.isNotEmpty) {
+      _selection.clear();
+      _search.clear();
+      if (_scroll.hasClients) _scroll.jumpTo(0);
+    }
     if (oldWidget.path != widget.path ||
         !identical(oldWidget.files, widget.files) ||
         oldWidget.sort != widget.sort ||

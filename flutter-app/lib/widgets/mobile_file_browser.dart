@@ -65,9 +65,12 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
   @override
   void didUpdateWidget(MobileFileBrowser oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.path != widget.path || oldWidget.server != widget.server) {
+    if (oldWidget.path != widget.path ||
+        oldWidget.server != widget.server ||
+        (widget.files.isEmpty && oldWidget.files.isNotEmpty)) {
       _selected.clear();
       _search.clear();
+      _searching = false;
     }
     final existing = widget.files.map(_key).toSet();
     _selected.removeWhere((key) => !existing.contains(key));

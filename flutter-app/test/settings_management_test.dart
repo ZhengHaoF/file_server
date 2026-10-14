@@ -48,4 +48,58 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'login dialog has fixed width, validates empty token, and shows inline errors',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await StorageService().init();
+      ApiService().setServerUrl('http://127.0.0.1:3000');
+
+      tester.view.physicalSize = const Size(1024, 768);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
+      await tester.pumpAndSettle();
+
+      // Open login dialog
+      await tester.tap(find.text('登录文件服务'));
+      await tester.pumpAndSettle();
+
+      // Verify dialog is open
+      expect(find.text('访问令牌'), findsOneWidget);
+      expect(find.text('记住登录状态'), findsOneWidget);
+
+      // Verify width is fixed to 400
+      final sizedBoxFinder = find.byWidgetPredicate(
+        (widget) => widget is SizedBox && widget.width == 400.0,
+      );
+      expect(sizedBoxFinder, findsOneWidget);
+
+      // Click login with empty token -> shows validation error
+      await tester.tap(find.widgetWithText(TextButton, '登录'));
+      await tester.pumpAndSettle();
+      expect(find.text('请输入访问令牌'), findsOneWidget);
+
+      // Entering text clears the error
+      await tester.enterText(find.byType(TextField), 'my_test_token_12345678901234567890');
+      await tester.pumpAndSettle();
+      expect(find.text('请输入访问令牌'), findsNothing);
+
+      // Sized box width is still strictly 400 after entering long token
+      expect(sizedBoxFinder, findsOneWidget);
+
+      // Clicking login with server down -> fails gracefully and shows error inline
+      await tester.tap(find.widgetWithText(TextButton, '登录'));
+      await tester.pump(); // Start async call, enters loading state
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      await tester.pumpAndSettle(); // Complete failure handling
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.textContaining('登录失败'), findsOneWidget);
+      expect(find.byType(AlertDialog), findsOneWidget); // Dialog stays open with error
+    },
+  );
 }

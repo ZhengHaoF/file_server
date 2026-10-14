@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:go_router/go_router.dart';
@@ -131,84 +132,158 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _showLoginDialog() async {
     final controller = TextEditingController();
     var remember = false;
+    var isLoading = false;
+    String? errorMessage;
+
     await showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (_, setDialogState) => AlertDialog(
-          title: const Text('登录文件服务'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: controller,
-                obscureText: true,
-                autocorrect: false,
-                enableSuggestions: false,
-                decoration: const InputDecoration(
-                  labelText: '访问令牌',
-                  helperText: '令牌用于换取文件服务会话',
+        builder: (_, setDialogState) {
+          final screenWidth = MediaQuery.sizeOf(dialogContext).width;
+          final dialogWidth = screenWidth > 464
+              ? 400.0
+              : (screenWidth - 64).clamp(240.0, 400.0);
+
+          Future<void> handleLogin() async {
+            final token = controller.text.trim();
+            if (token.isEmpty) {
+              setDialogState(() {
+                errorMessage = '请输入访问令牌';
+              });
+              return;
+            }
+            setDialogState(() {
+              isLoading = true;
+              errorMessage = null;
+            });
+            try {
+              final remembered = await _apiService.login(
+                token,
+                remember: remember,
+              );
+              if (dialogContext.mounted) {
+                controller.clear();
+                Navigator.pop(dialogContext);
+              }
+              if (mounted) {
+                setState(() {});
+                if (remember && !remembered) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('当前系统无法安全保存令牌，重启后需重新登录'),
+                    ),
+                  );
+                }
+              }
+            } catch (e) {
+              String error = '登录失败，请检查服务器和令牌';
+              if (e is DioException) {
+                final data = e.response?.data;
+                final status = e.response?.statusCode;
+                if (data is Map && data.containsKey('msg') && data['msg'] != null) {
+                  error = data['msg'].toString();
+                } else if (status == 401) {
+                  error = '访问令牌无效或已过期';
+                } else if (status == 403) {
+                  error = '服务器拒绝访问，请检查权限';
+                } else if (status == 429) {
+                  error = '登录尝试过多，请稍后再试';
+                } else if (e.type == DioExceptionType.connectionTimeout ||
+                    e.type == DioExceptionType.receiveTimeout ||
+                    e.type == DioExceptionType.sendTimeout) {
+                  error = '连接超时，请检查网络和服务器地址';
+                } else if (e.type == DioExceptionType.connectionError) {
+                  error = '无法连接到服务器，请检查地址是否正确';
+                }
+              } else if (e is StateError) {
+                error = e.message;
+              } else if (e is FormatException) {
+                error = e.message;
+              }
+
+              if (dialogContext.mounted) {
+                setDialogState(() {
+                  isLoading = false;
+                  errorMessage = error;
+                });
+              }
+            }
+          }
+
+          return PopScope(
+            canPop: !isLoading,
+            child: AlertDialog(
+              title: const Text('登录文件服务'),
+              content: SizedBox(
+                width: dialogWidth,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: controller,
+                      obscureText: true,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      enabled: !isLoading,
+                      onChanged: (_) {
+                        if (errorMessage != null) {
+                          setDialogState(() => errorMessage = null);
+                        }
+                      },
+                      onSubmitted: isLoading ? null : (_) => handleLogin(),
+                      decoration: InputDecoration(
+                        labelText: '访问令牌',
+                        helperText: errorMessage == null
+                            ? '令牌用于换取文件服务会话'
+                            : null,
+                        errorText: errorMessage,
+                      ),
+                    ),
+                    if (TokenStore().isBlocked || TokenStore().isUnavailable)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: Text(
+                          '当前平台无法安全保存令牌，重启后需重新登录',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      )
+                    else
+                      CheckboxListTile(
+                        value: remember,
+                        enabled: !isLoading,
+                        onChanged: isLoading
+                            ? null
+                            : (value) =>
+                                setDialogState(() => remember = value ?? false),
+                        title: const Text('记住登录状态'),
+                        subtitle: const Text('令牌加密保存在系统安全存储中'),
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.trailing,
+                      ),
+                  ],
                 ),
               ),
-              if (TokenStore().isBlocked || TokenStore().isUnavailable)
-                const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Text(
-                    '当前平台无法安全保存令牌，重启后需重新登录',
-                    style: TextStyle(fontSize: 12),
-                  ),
-                )
-              else
-                CheckboxListTile(
-                  value: remember,
-                  onChanged: (value) =>
-                      setDialogState(() => remember = value ?? false),
-                  title: const Text('记住登录状态'),
-                  subtitle: const Text('令牌加密保存在系统安全存储中'),
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.trailing,
+              actions: [
+                TextButton(
+                  onPressed:
+                      isLoading ? null : () => Navigator.pop(dialogContext),
+                  child: const Text('取消'),
                 ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('取消'),
+                TextButton(
+                  onPressed: isLoading ? null : handleLogin,
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('登录'),
+                ),
+              ],
             ),
-            TextButton(
-              onPressed: () async {
-                final token = controller.text.trim();
-                if (token.isEmpty) return;
-                try {
-                  final remembered = await _apiService.login(
-                    token,
-                    remember: remember,
-                  );
-                  if (dialogContext.mounted) {
-                    controller.clear();
-                    Navigator.pop(dialogContext);
-                  }
-                  if (mounted) {
-                    setState(() {});
-                    if (remember && !remembered) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('当前系统无法安全保存令牌，重启后需重新登录'),
-                        ),
-                      );
-                    }
-                  }
-                } catch (_) {
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('登录失败，请检查服务器和令牌')),
-                    );
-                  }
-                }
-              },
-              child: const Text('登录'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
     // The dialog exit animation may still reference its controller.

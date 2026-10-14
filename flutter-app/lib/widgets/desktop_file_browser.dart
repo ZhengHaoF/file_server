@@ -376,15 +376,6 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                   ),
                   const Spacer(),
                   _nav(
-                    colors.brightness == Brightness.dark
-                        ? Icons.dark_mode_outlined
-                        : Icons.light_mode_outlined,
-                    '切换主题',
-                    () => widget.onTheme(colors.brightness == Brightness.dark),
-                    rail,
-                    key: const ValueKey('nav-theme'),
-                  ),
-                  _nav(
                     Icons.settings_outlined,
                     '设置与登录',
                     () => _showSection(_Section.settings),
@@ -400,19 +391,49 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                     selected: _section == _Section.logs,
                     key: const ValueKey('nav-logs'),
                   ),
-                  if (!rail)
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(
-                        Uri.tryParse(widget.server)?.host ?? '文件服务',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      rail ? 8 : 20,
+                      8,
+                      rail ? 8 : 12,
+                      12,
                     ),
-                  const SizedBox(height: 12),
+                    child: rail
+                        ? Center(
+                            child: IconButton(
+                              key: const ValueKey('nav-theme'),
+                              tooltip: '切换主题',
+                              icon: _themeIcon(colors, reduceMotion),
+                              onPressed: () => widget.onTheme(
+                                colors.brightness == Brightness.dark,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                          )
+                        : Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  Uri.tryParse(widget.server)?.host ?? '文件服务',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: colors.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                key: const ValueKey('nav-theme'),
+                                tooltip: '切换主题',
+                                icon: _themeIcon(colors, reduceMotion),
+                                onPressed: () => widget.onTheme(
+                                  colors.brightness == Brightness.dark,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ],
+                          ),
+                  ),
                 ],
               ),
             ),
@@ -815,6 +836,37 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _themeIcon(ColorScheme colors, bool reduceMotion) {
+    final isDark = colors.brightness == Brightness.dark;
+    final icon = isDark ? Icons.dark_mode_outlined : Icons.light_mode_outlined;
+    return AnimatedSwitcher(
+      duration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 210),
+      reverseDuration: reduceMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 90),
+      switchInCurve: Curves.easeInOut,
+      switchOutCurve: Curves.easeInOut,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: ScaleTransition(
+          scale: Tween<double>(
+            begin: 0.96,
+            end: 1.0,
+          ).animate(animation),
+          child: child,
+        ),
+      ),
+      child: Icon(
+        icon,
+        key: ValueKey(icon),
+        size: 20,
+        color: colors.onSurfaceVariant,
       ),
     );
   }

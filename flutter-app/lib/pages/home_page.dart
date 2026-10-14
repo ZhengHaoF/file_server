@@ -922,14 +922,9 @@ class _HomePageState extends State<HomePage> {
             },
             onRefresh: _loadFileList,
             onUpload: _pickAndUpload,
-            onTheme: () {
-              cycleAppTheme();
-              final label = switch (appThemeMode.value) {
-                ThemeMode.system => '跟随系统',
-                ThemeMode.light => '浅色',
-                ThemeMode.dark => '深色',
-              };
-              _showSnack('外观：$label');
+            onTheme: (dark) {
+              setAppTheme(dark ? ThemeMode.light : ThemeMode.dark);
+              _showSnack(dark ? '浅色模式' : '深色模式');
             },
             onToggleView: _toggleViewMode,
             onSort: (sort) => setState(() => _storage.fileSort = sort),

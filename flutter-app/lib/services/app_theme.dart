@@ -72,9 +72,10 @@ void restoreAppTheme() {
   );
 }
 
-void cycleAppTheme() {
-  final next = ThemeMode
-      .values[(appThemeMode.value.index + 1) % ThemeMode.values.length];
-  appThemeMode.value = next;
-  StorageService().appearance = next.name;
+/// Explicit theme assignment used by the sidebar toggle. Kept separate from
+/// [restoreAppTheme] so a two-state switch never has to reason about the
+/// persisted three-state value.
+void setAppTheme(ThemeMode mode) {
+  appThemeMode.value = mode;
+  StorageService().appearance = mode.name;
 }

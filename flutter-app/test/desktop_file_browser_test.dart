@@ -72,8 +72,11 @@ void main() {
     String view = 'list',
     String? error,
     bool loading = false,
+    ThemeMode themeMode = ThemeMode.light,
   }) => MaterialApp(
     theme: ThemeData(useMaterial3: true),
+    darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
+    themeMode: themeMode,
     home: Scaffold(
       body: DesktopFileBrowser(
         files: files ?? [file('a.txt'), file('b.txt'), file('c.txt')],
@@ -89,7 +92,7 @@ void main() {
         onNavigate: (p) => events.add('path:$p'),
         onRefresh: () => events.add('refresh'),
         onUpload: () => events.add('upload'),
-        onTheme: () => events.add('theme'),
+        onTheme: (isDark) => events.add('theme:$isDark'),
         onToggleView: () => events.add('toggle'),
         onSort: (s) => events.add('sort:$s'),
         onOpen: (f) => events.add('open:${f.name}'),
@@ -346,5 +349,53 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('file:a.txt')), findsNothing);
     expect(find.byType(DownloadManagerPage), findsOneWidget);
+  });
+
+  testWidgets(
+    'theme toggle mirrors resolved brightness and hands it to the callback',
+    (tester) async {
+      await mount(tester);
+
+      // 浅色：太阳图标，点击回传“当前是浅色”，由调用方决定切到深色。
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('nav-theme')),
+          matching: find.byIcon(Icons.light_mode_outlined),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('nav-theme')));
+      expect(events, ['theme:false']);
+
+      // 暗色：月亮图标，再次点击回传 true。
+      await mount(tester, child: browser(themeMode: ThemeMode.dark));
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('nav-theme')),
+          matching: find.byIcon(Icons.dark_mode_outlined),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('nav-theme')));
+      expect(events, ['theme:false', 'theme:true']);
+    },
+  );
+
+  testWidgets('theme icon crossfades instead of swapping instantly', (
+    tester,
+  ) async {
+    await mount(tester);
+    expect(find.byIcon(Icons.light_mode_outlined), findsOneWidget);
+
+    await tester.pumpWidget(browser(themeMode: ThemeMode.dark));
+    await tester.pump();
+    // 过渡中：旧太阳淡出、新月亮淡入，两个图标同时在树里。
+    expect(find.byIcon(Icons.light_mode_outlined), findsOneWidget);
+    expect(find.byIcon(Icons.dark_mode_outlined), findsOneWidget);
+
+    // 过渡结束后只剩月亮。
+    await tester.pumpAndSettle();
+    expect(find.byIcon(Icons.light_mode_outlined), findsNothing);
+    expect(find.byIcon(Icons.dark_mode_outlined), findsOneWidget);
   });
 }

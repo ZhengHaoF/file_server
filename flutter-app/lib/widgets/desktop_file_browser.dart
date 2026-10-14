@@ -36,7 +36,9 @@ class DesktopFileBrowser extends StatefulWidget {
   final ValueChanged<String> onNavigate;
   final VoidCallback onRefresh;
   final VoidCallback onUpload;
-  final VoidCallback onTheme;
+  /// Receives the currently effective brightness so the toggle can flip to the
+  /// opposite appearance without re-deriving it from a captured context.
+  final void Function(bool isDark) onTheme;
   final VoidCallback onToggleView;
   final ValueChanged<String> onSort;
   final ValueChanged<FileInfo> onOpen;
@@ -372,10 +374,13 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                   ),
                   const Spacer(),
                   _nav(
-                    Icons.brightness_6_outlined,
+                    colors.brightness == Brightness.dark
+                        ? Icons.dark_mode_outlined
+                        : Icons.light_mode_outlined,
                     '切换主题',
-                    widget.onTheme,
+                    () => widget.onTheme(colors.brightness == Brightness.dark),
                     rail,
+                    key: const ValueKey('nav-theme'),
                   ),
                   _nav(
                     Icons.settings_outlined,
@@ -750,6 +755,8 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
     Key? key,
   }) {
     final colors = Theme.of(context).colorScheme;
+    // 系统关闭动效（无障碍设置）时图标直接硬切，不做交叉淡入淡出。
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       child: Tooltip(
@@ -766,12 +773,34 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
             ),
             child: Row(
               children: [
-                Icon(
-                  icon,
-                  size: 20,
-                  color: selected
-                      ? colors.onPrimaryContainer
-                      : colors.onSurfaceVariant,
+                // 只有主题图标会变，key 恒定不变时 AnimatedSwitcher 不重放动画。
+                AnimatedSwitcher(
+                  duration: reduceMotion
+                      ? Duration.zero
+                      : const Duration(milliseconds: 210),
+                  reverseDuration: reduceMotion
+                      ? Duration.zero
+                      : const Duration(milliseconds: 90),
+                  switchInCurve: Curves.easeInOut,
+                  switchOutCurve: Curves.easeInOut,
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(
+                        begin: 0.96,
+                        end: 1.0,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    key: ValueKey(icon),
+                    size: 20,
+                    color: selected
+                        ? colors.onPrimaryContainer
+                        : colors.onSurfaceVariant,
+                  ),
                 ),
                 if (!rail) ...[const SizedBox(width: 12), Text(label)],
               ],

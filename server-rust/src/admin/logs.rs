@@ -78,7 +78,7 @@ fn decode_cursor(cursor: &str) -> ApiResult<Cursor> {
     })
 }
 
-pub fn file_identity(meta: &std::fs::Metadata) -> String {
+pub fn file_identity(path: &Path, meta: &std::fs::Metadata) -> String {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
@@ -90,7 +90,22 @@ pub fn file_identity(meta: &std::fs::Metadata) -> String {
             .unwrap_or(0);
         format!("{}:{}:{}", meta.dev(), meta.ino(), birth)
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        let birth = meta
+            .created()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        if let Ok(file) = std::fs::File::open(path) {
+            if let Some((vol, idx)) = windows_file_id(&file) {
+                return format!("{vol}:{idx}:{birth}");
+            }
+        }
+        format!("0:0:{birth}")
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let birth = meta
             .created()
@@ -99,6 +114,38 @@ pub fn file_identity(meta: &std::fs::Metadata) -> String {
             .map(|d| d.as_millis())
             .unwrap_or(0);
         format!("0:0:{birth}")
+    }
+}
+
+#[cfg(windows)]
+fn windows_file_id(file: &std::fs::File) -> Option<(u32, u64)> {
+    use std::os::windows::io::AsRawHandle;
+    #[allow(non_snake_case)]
+    #[repr(C)]
+    struct BY_HANDLE_FILE_INFORMATION {
+        dwFileAttributes: u32,
+        ftCreationTime: [u32; 2],
+        ftLastAccessTime: [u32; 2],
+        ftLastWriteTime: [u32; 2],
+        dwVolumeSerialNumber: u32,
+        nFileSizeHigh: u32,
+        nFileSizeLow: u32,
+        nNumberOfLinks: u32,
+        nFileIndexHigh: u32,
+        nFileIndexLow: u32,
+    }
+    extern "system" {
+        fn GetFileInformationByHandle(hFile: std::os::windows::raw::HANDLE, lpFileInformation: *mut BY_HANDLE_FILE_INFORMATION) -> i32;
+    }
+    let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+    let handle = file.as_raw_handle();
+    let res = unsafe { GetFileInformationByHandle(handle as _, info.as_mut_ptr()) };
+    if res != 0 {
+        let info = unsafe { info.assume_init() };
+        let index = ((info.nFileIndexHigh as u64) << 32) | (info.nFileIndexLow as u64);
+        Some((info.dwVolumeSerialNumber, index))
+    } else {
+        None
     }
 }
 
@@ -343,7 +390,7 @@ pub fn query(dir: &Path, q: &Query) -> ApiResult<Page> {
         let mut last_position: Option<Position> = None;
         for (index, file) in files.iter().enumerate() {
             let Ok(meta) = std::fs::metadata(file) else { continue };
-            let identity = file_identity(&meta);
+            let identity = file_identity(file, &meta);
             let mut before = u64::MAX;
             if !boundary_found {
                 let position = boundary.as_ref().and_then(|b| b.position.as_ref()).unwrap();
@@ -401,7 +448,7 @@ pub fn query(dir: &Path, q: &Query) -> ApiResult<Page> {
         .map(|b| (b.time.as_deref().and_then(parse_time).unwrap_or(0), b.id.clone()));
     for file in &files {
         let Ok(meta) = std::fs::metadata(file) else { continue };
-        let identity = file_identity(&meta);
+        let identity = file_identity(file, &meta);
         forward_scan(file, &mut |offset, line| {
             let Some(log) = parse_line(line, &q.source, &format!("{identity}:{offset}")) else {
                 return;

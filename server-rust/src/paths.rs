@@ -180,7 +180,9 @@ pub async fn resolve_dir_or_create(root: &Path, input: &str) -> ApiResult<PathBu
                         return Err(ApiError::io("dir.create", &err));
                     }
                 }
-                let meta = tokio::fs::symlink_metadata(&current).await.map_err(|e| ApiError::io("dir.stat", &e))?;
+                let meta = tokio::fs::symlink_metadata(&current)
+                    .await
+                    .map_err(|e| ApiError::io("dir.stat", &e))?;
                 if meta.file_type().is_symlink() || is_reparse_point(&meta) {
                     return Err(ApiError::new(403, "不允许访问软链接或目录联接"));
                 }

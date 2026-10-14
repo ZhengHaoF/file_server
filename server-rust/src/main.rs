@@ -94,6 +94,8 @@ fn serve(config: config::Config, env: Env) -> ExitCode {
         "凭据保存在 {}（访问令牌与管理令牌不同，请勿提交）",
         config.data_path.join(config::AUTH_FILE).display()
     );
+    eprintln!("当前访问密码 (accessToken): {}", config.access_token);
+    eprintln!("当前后台密码 (restartPwd):   {}", config.admin_token);
     let runtime = match tokio::runtime::Builder::new_multi_thread().enable_all().build() {
         Ok(r) => r,
         Err(e) => {

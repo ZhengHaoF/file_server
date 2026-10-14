@@ -26,7 +26,10 @@ pub fn require_read(state: &SharedState, headers: &HeaderMap, query: &HashMap<St
         return Ok(());
     }
     let cfg = state.cfg();
-    if query.get("ticket").is_some_and(|t| state.auth.ticket_valid(t, &cfg.access_token, &cfg.admin_token)) {
+    if query
+        .get("ticket")
+        .is_some_and(|t| state.auth.ticket_valid(t, &cfg.access_token, &cfg.admin_token))
+    {
         return Ok(());
     }
     Err(ApiError::new(401, "请先登录文件服务").code("AUTH_REQUIRED"))

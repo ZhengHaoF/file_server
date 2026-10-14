@@ -52,7 +52,7 @@ file-server --version | --help
 
 ### 其他环境变量
 
-- `FILE_SERVER_ACCESS_TOKEN` / `FILE_SERVER_ADMIN_TOKEN`：覆盖长期凭据（各 ≥16 字符且不同）。未提供时首次启动随机生成 2×32 字节 hex 并写入 `<dataPath>/auth.local.json`，日志只打印文件路径，不打印令牌。
+- `FILE_SERVER_ACCESS_TOKEN` / `FILE_SERVER_ADMIN_TOKEN`：覆盖长期凭据（各 ≥16 字符且不同）。未提供时首次启动随机生成 2×32 字节 hex 并写入 `<dataPath>/auth.local.json`。服务启动时在终端（stderr）提示凭据路径及当前访问密码与后台密码（应用日志 app.log 保持脱敏，不记录令牌）。
 - `FILE_SERVER_MANAGED=1`：声明存在重启监督（supervise 子进程、Docker `restart: unless-stopped|always|on-failure`、systemd `Restart=always|on-failure`）。只有此时 `POST /api/admin/restart` 返回 202；服务优雅退出并以 **退出码 75** 结束，由监督者拉起。否则 409。
 - `FILE_SERVER_DEPLOYMENT=docker|systemd|supervisor|standalone`：仅用于状态展示，未设置时 managed→`supervisor`，否则 `standalone`。
 - `FILE_SERVER_VIPS`（默认 `vips`）、`FILE_SERVER_VIPSHEADER`（默认 `vipsheader`）、`FILE_SERVER_FFMPEG`（默认 `ffmpeg`）：缩略图外部程序。缺失时对应预览返回 503 `PREVIEW_UNAVAILABLE`，不影响其他功能。

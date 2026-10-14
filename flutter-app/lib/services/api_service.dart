@@ -13,12 +13,13 @@ class ApiService {
   late final Dio _dio;
   late String _serverBaseUrl;
   String? _sessionToken;
+  String? _rawToken;
   String? _readTicket;
   int _ticketExpiresAt = 0;
   final TokenStore _tokenStore = TokenStore();
   bool _tokenRemembered = false;
   Future<bool>? _pendingRestore;
-  bool get isLoggedIn => _sessionToken != null;
+  bool get isLoggedIn => _rawToken != null || _sessionToken != null;
 
   /// The long-lived token survives restarts in the platform secure store.
   bool get tokenRemembered => _tokenRemembered;
@@ -32,7 +33,7 @@ class ApiService {
         receiveTimeout: const Duration(seconds: 10),
       ),
     );
-    _dio.interceptors.add(_NetworkLogInterceptor(NetworkLogService()));
+    _dio.interceptors.add(NetworkLogInterceptor(NetworkLogService()));
   }
 
   void setServerUrl(String url) {
@@ -56,11 +57,20 @@ class ApiService {
     }
   }
 
+  bool _writeEnabled = false;
+  bool _uploadEnabled = false;
+
+  bool get writeEnabled => _writeEnabled;
+  bool get uploadEnabled => _uploadEnabled;
+
   void _clearSession() {
     _sessionToken = null;
+    _rawToken = null;
     _readTicket = null;
     _ticketExpiresAt = 0;
     _tokenRemembered = false;
+    _writeEnabled = false;
+    _uploadEnabled = false;
     _dio.options.headers.remove('Authorization');
   }
 
@@ -101,26 +111,40 @@ class ApiService {
     if (server != _serverBaseUrl) {
       throw StateError('登录期间服务器已切换，请重新登录');
     }
-    _applySession(response.data);
     if (persistDecision) {
       if (remember) {
+        _rawToken = token;
         _tokenRemembered = await _tokenStore.save(_origin, token);
       } else {
         // An explicit opt-out must not leave an older token to be resurrected.
         await _tokenStore.clear(_origin);
         _tokenRemembered = false;
+        _rawToken = null;
       }
     } else {
+      _rawToken = token;
       _tokenRemembered = remember;
     }
+    _applySession(response.data);
     return _tokenRemembered;
   }
 
   void _applySession(dynamic data) {
-    _sessionToken = data['sessionToken'] as String;
-    _readTicket = data['readTicket'] as String;
-    _ticketExpiresAt = (data['ticketExpiresAt'] as num).toInt();
-    _dio.options.headers['Authorization'] = 'Bearer $_sessionToken';
+    _sessionToken = data['sessionToken'] as String?;
+    _readTicket = data['readTicket'] as String?;
+    if (data['ticketExpiresAt'] is num) {
+      _ticketExpiresAt = (data['ticketExpiresAt'] as num).toInt();
+    }
+    if (data is Map<String, dynamic>) {
+      _writeEnabled = data['writeEnabled'] != false;
+      _uploadEnabled = data['uploadEnabled'] != false;
+    }
+    final activeToken = _sessionToken ?? _rawToken;
+    if (activeToken != null) {
+      _dio.options.headers['Authorization'] = 'Bearer $activeToken';
+    } else {
+      _dio.options.headers.remove('Authorization');
+    }
   }
 
   /// Silent auto-login from the remembered token. Never throws; a rejected
@@ -141,12 +165,21 @@ class ApiService {
 
   Future<bool> _restoreSession() async {
     final origin = _origin;
-    final token = await _tokenStore.read(origin);
+    final storedToken = await _tokenStore.read(origin);
+    final token = storedToken ?? _rawToken;
     if (token == null) return false;
     try {
-      return await _login(token, remember: true, persistDecision: false);
+      await _login(
+        token,
+        remember: storedToken != null,
+        persistDecision: false,
+      );
+      return true;
     } on DioException catch (e) {
-      if (e.response?.statusCode == 401) await _tokenStore.clear(origin);
+      if (e.response?.statusCode == 401) {
+        await _tokenStore.clear(origin);
+        _clearSession();
+      }
       return false;
     } catch (_) {
       return false;
@@ -156,7 +189,7 @@ class ApiService {
   /// Revokes the server session when possible and always drops local state.
   Future<void> logout() async {
     final server = _serverBaseUrl;
-    if (_sessionToken != null) {
+    if (_sessionToken != null || _rawToken != null) {
       try {
         await _dio.post('$server/api/auth/logout');
       } catch (_) {
@@ -168,15 +201,16 @@ class ApiService {
   }
 
   Map<String, String> authHeadersFor(String url) {
-    if (_sessionToken == null ||
+    final activeToken = _sessionToken ?? _rawToken;
+    if (activeToken == null ||
         Uri.parse(url).origin != Uri.parse(_serverBaseUrl).origin) {
       return {};
     }
-    return {'Authorization': 'Bearer $_sessionToken'};
+    return {'Authorization': 'Bearer $activeToken'};
   }
 
   Future<void> _ensureTicket({CancelToken? cancelToken}) async {
-    if (_sessionToken == null ||
+    if ((_sessionToken == null && _rawToken == null) ||
         _ticketExpiresAt > DateTime.now().millisecondsSinceEpoch + 60000) {
       return;
     }
@@ -186,8 +220,10 @@ class ApiService {
       cancelToken: cancelToken,
     );
     if (server != _serverBaseUrl) throw StateError('服务器已切换');
-    _readTicket = response.data['readTicket'] as String;
-    _ticketExpiresAt = (response.data['ticketExpiresAt'] as num).toInt();
+    _readTicket = response.data['readTicket'] as String?;
+    if (response.data['ticketExpiresAt'] is num) {
+      _ticketExpiresAt = (response.data['ticketExpiresAt'] as num).toInt();
+    }
   }
 
   static String imagePreviewUrl(String url, int size) {
@@ -323,10 +359,10 @@ class ApiService {
   }
 }
 
-class _NetworkLogInterceptor extends Interceptor {
+class NetworkLogInterceptor extends Interceptor {
   final NetworkLogService _logService;
 
-  _NetworkLogInterceptor(this._logService);
+  NetworkLogInterceptor(this._logService);
 
   static const _startKey = '_networkLogStart';
 
@@ -356,7 +392,7 @@ class _NetworkLogInterceptor extends Interceptor {
       statusMessage: err.response?.statusMessage ?? err.message,
       responseHeaders: err.response?.headers.map,
       responseBody: err.response?.data,
-      error: err.message,
+      error: err.message ?? err.error?.toString(),
     );
     handler.next(err);
   }

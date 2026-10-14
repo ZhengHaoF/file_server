@@ -217,6 +217,15 @@ async fn write_operations_are_safe() {
         .unwrap();
     assert_eq!(res.status(), 200);
     assert_eq!(std::fs::read(s.files().join("docs/报告.txt")).unwrap(), b"v1");
+    // Auto-creates missing nested directories safely.
+    let res = s
+        .post("/upload", &token)
+        .multipart(upload("nested/sub/folder", "nested.txt", b"nest".to_vec()))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    assert_eq!(std::fs::read(s.files().join("nested/sub/folder/nested.txt")).unwrap(), b"nest");
     // Never overwrites.
     let res = s
         .post("/upload", &token)

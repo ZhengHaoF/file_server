@@ -23,6 +23,7 @@ import '../utils/platform_utils.dart';
 import '../widgets/file_icon.dart';
 import '../widgets/desktop_file_browser.dart';
 import '../utils/file_browser_utils.dart';
+import '../utils/folder_scanner.dart';
 import '../widgets/image_preview_dialog.dart';
 import '../widgets/mobile_file_browser.dart';
 import '../widgets/server_connection_sheet.dart';
@@ -650,6 +651,16 @@ class _HomePageState extends State<HomePage> {
                 _pickAndUpload();
               },
             ),
+            if (!kIsWeb)
+              ListTile(
+                leading: const Icon(Icons.drive_folder_upload),
+                title: const Text('选择文件夹'),
+                subtitle: const Text('递归上传整个文件夹及子目录'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickAndUploadFolder();
+                },
+              ),
             if (!kIsWeb &&
                 (defaultTargetPlatform == TargetPlatform.android ||
                     defaultTargetPlatform == TargetPlatform.iOS))
@@ -685,6 +696,71 @@ class _HomePageState extends State<HomePage> {
       _enqueueUploads(result.files);
     } catch (e) {
       if (mounted) _showSnack('选择文件失败');
+    }
+  }
+
+  Future<void> _pickAndUploadFolder() async {
+    try {
+      final dirPath = await FilePicker.platform.getDirectoryPath(
+        dialogTitle: '选择要上传的文件夹',
+      );
+      if (dirPath == null || dirPath.isEmpty) return;
+      final result = await scanDirectoryForUpload(dirPath, _currentPath);
+      await _promptAndEnqueueResult(result);
+    } catch (e) {
+      if (mounted) _showSnack('选择文件夹失败');
+    }
+  }
+
+  Future<void> _promptAndEnqueueResult(FolderScanResult result) async {
+    if (result.items.isEmpty) {
+      if (mounted) {
+        _showSnack(
+          result.skippedBlockedCount > 0
+              ? '所选项目内均为受限类型文件（如 HTML/JS 等），已拦截'
+              : '未找到可上传的文件',
+        );
+      }
+      return;
+    }
+
+    if (result.totalFiles > 300 && mounted) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('确认批量上传'),
+          content: Text(
+            '检测到 ${result.totalFiles} 个文件（共 ${formatFileBytes(result.totalBytes)}），是否加入上传队列？',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('开始上传'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    _uploadQueued = true;
+    UploadService().startUploadPayloads(
+      result.items.map((i) => i.toPayload()).toList(),
+      _currentPath,
+    );
+    if (mounted) {
+      if (result.skippedBlockedCount > 0) {
+        _showSnack(
+          '已加入上传队列（${result.items.length} 个文件），已跳过 ${result.skippedBlockedCount} 个受限制类型文件',
+        );
+      } else {
+        _showSnack('已加入上传队列（${result.items.length} 个文件）');
+      }
+      context.push('/downloads?tab=1');
     }
   }
 
@@ -929,6 +1005,7 @@ class _HomePageState extends State<HomePage> {
             },
             onRefresh: _loadFileList,
             onUpload: _pickAndUpload,
+            onUploadFolder: _pickAndUploadFolder,
             onTheme: (dark) {
               setAppTheme(dark ? ThemeMode.light : ThemeMode.dark);
               _showSnack(dark ? '浅色模式' : '深色模式');
@@ -1090,43 +1167,14 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 处理拖入的文件：过滤掉文件夹后交给上传队列（目标目录即当前目录）
+  /// 处理拖入的文件与文件夹：递归扫描解析后交给上传队列
   Future<void> _handleDropFiles(DropDoneDetails detail) async {
     if (mounted) setState(() => _isDragging = false);
+    final paths = detail.files.map((f) => f.path).toList();
+    if (paths.isEmpty) return;
 
-    final picked = <PlatformFile>[];
-    var skippedFolders = 0;
-
-    for (final file in detail.files) {
-      try {
-        // 后端 /upload 一次只接收一个文件，暂不支持整个文件夹
-        if (await FileSystemEntity.isDirectory(file.path)) {
-          skippedFolders++;
-          continue;
-        }
-        picked.add(
-          PlatformFile(
-            name: file.name,
-            path: file.path,
-            size: await file.length(),
-          ),
-        );
-      } catch (e) {
-        // 单个文件读取失败不影响其余文件
-      }
-    }
-
-    if (picked.isEmpty) {
-      if (mounted) {
-        _showSnack(skippedFolders > 0 ? '暂不支持拖入文件夹' : '拖入的项目无法上传');
-      }
-      return;
-    }
-
-    if (skippedFolders > 0 && mounted) {
-      _showSnack('已跳过 $skippedFolders 个文件夹（暂不支持）');
-    }
-    _enqueueUploads(picked);
+    final result = await scanDroppedPathsForUpload(paths, _currentPath);
+    await _promptAndEnqueueResult(result);
   }
 
   Widget _buildListView(List<FileInfo> files) {

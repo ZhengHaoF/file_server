@@ -3,7 +3,7 @@
 use crate::auth::Identity;
 use crate::error::{ApiError, ApiResult};
 use crate::http::{inline_safe, mime_for, serve_file, JsonBody, ServeOptions};
-use crate::paths::{self, fix_upload_filename, publish_file, resolve_safe, EXISTING, EXISTING_ITEM, NEW_ITEM};
+use crate::paths::{self, fix_upload_filename, publish_file, resolve_dir_or_create, resolve_safe, EXISTING, EXISTING_ITEM, NEW_ITEM};
 use crate::state::{SharedState, UPLOAD_LIMIT};
 use axum::extract::{Multipart, Path as UrlPath, Query, State};
 use axum::http::{HeaderMap, Method};
@@ -25,7 +25,8 @@ pub fn require_read(state: &SharedState, headers: &HeaderMap, query: &HashMap<St
     if state.cfg().public_read || state.identify(headers).is_some() {
         return Ok(());
     }
-    if query.get("ticket").is_some_and(|t| state.auth.ticket_valid(t)) {
+    let cfg = state.cfg();
+    if query.get("ticket").is_some_and(|t| state.auth.ticket_valid(t, &cfg.access_token, &cfg.admin_token)) {
         return Ok(());
     }
     Err(ApiError::new(401, "请先登录文件服务").code("AUTH_REQUIRED"))
@@ -401,13 +402,22 @@ pub async fn upload(
     headers: HeaderMap,
     multipart: Result<Multipart, axum::extract::multipart::MultipartRejection>,
 ) -> ApiResult<Response> {
-    let identity = require_write(&state, &headers)?;
+    crate::logging::info("files", "收到 /upload 请求");
+    let identity = match require_write(&state, &headers) {
+        Ok(id) => id,
+        Err(e) => {
+            crate::logging::warn("files", &format!("上传被拒绝: 权限校验未通过 ({e})"));
+            return Err(e);
+        }
+    };
     let config = state.cfg();
     if !config.upload_enabled {
+        crate::logging::warn("files", "上传被拒绝: 服务端 uploadEnabled 为 false (未启用上传功能)");
         return Err(ApiError::new(403, "上传功能未启用").code("UPLOAD_DISABLED"));
     }
     if state.uploads_active.fetch_add(1, Ordering::SeqCst) >= UPLOAD_LIMIT {
         state.uploads_active.fetch_sub(1, Ordering::SeqCst);
+        crate::logging::warn("files", "上传被拒绝: 任务过多达到并发限制");
         return Err(ApiError::new(429, "上传任务过多，请稍后重试"));
     }
     let _slot = Slot(state.clone());
@@ -456,11 +466,7 @@ async fn receive(state: &SharedState, config: &crate::config::Config, identity: 
                 };
                 let original = field.file_name().ok_or_else(|| ApiError::bad_request("缺少文件名"))?.to_string();
                 let safe_name = fix_upload_filename(&original)?;
-                let dir = resolve_safe(root, &dest_input, EXISTING).await?;
-                let meta = tokio::fs::metadata(&dir).await.map_err(|e| ApiError::io("upload.stat", &e))?;
-                if !meta.is_dir() {
-                    return Err(ApiError::bad_request("目标不是文件夹"));
-                }
+                let dir = resolve_dir_or_create(root, &dest_input).await?;
                 let temp_path = dir.join(format!(".fsupload-{}", uuid::Uuid::new_v4()));
                 let mut file = tokio::fs::OpenOptions::new()
                     .write(true)

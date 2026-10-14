@@ -6,9 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/upload_task.dart';
 import 'api_service.dart';
+import 'network_log_service.dart';
 
 const _kUploadTasksKey = 'upload_tasks';
-const _kMaxUploadTasks = 200;
+const _kMaxUploadTasks = 2000;
 
 class UploadService extends ChangeNotifier {
   static final UploadService _instance = UploadService._internal();
@@ -36,6 +37,7 @@ class UploadService extends ChangeNotifier {
         receiveTimeout: const Duration(seconds: 60),
       ),
     );
+    client.interceptors.add(NetworkLogInterceptor(NetworkLogService()));
     if (adapter != null) client.httpClientAdapter = adapter;
     return client;
   }
@@ -74,6 +76,25 @@ class UploadService extends ChangeNotifier {
     List<({String fileName, String localPath, int fileSize})> items,
     String destPath,
   ) {
+    startUploadPayloads(
+      items
+          .map((i) => (
+                fileName: i.fileName,
+                localPath: i.localPath,
+                fileSize: i.fileSize,
+                destPath: destPath,
+              ))
+          .toList(),
+      destPath,
+    );
+  }
+
+  /// 支持每个项目自带独立 destPath 的上传队列入口（供文件夹递归上传使用）
+  void startUploadPayloads(
+    List<({String fileName, String localPath, int fileSize, String? destPath})>
+        items,
+    String defaultDestPath,
+  ) {
     for (final item in items) {
       if (_tasks.length >= _kMaxUploadTasks) {
         _tasks.removeWhere((t) => t.status.isTerminal);
@@ -85,7 +106,7 @@ class UploadService extends ChangeNotifier {
       final task = AppUploadTask(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         fileName: item.fileName,
-        destPath: destPath,
+        destPath: item.destPath ?? defaultDestPath,
         localPath: item.localPath,
         serverUrl: ApiService().serverBaseUrl,
         fileSize: item.fileSize,
@@ -113,7 +134,10 @@ class UploadService extends ChangeNotifier {
     }
   }
 
-  Future<void> _executeUpload(AppUploadTask task) async {
+  Future<void> _executeUpload(
+    AppUploadTask task, {
+    bool allowRelogin = true,
+  }) async {
     final cancelToken = CancelToken();
     _cancelTokens[task.id] = cancelToken;
 
@@ -135,6 +159,9 @@ class UploadService extends ChangeNotifier {
       if (task.serverUrl.isEmpty ||
           task.serverUrl != ApiService().serverBaseUrl) {
         throw StateError('任务属于其他或未知服务器，请切回原服务器后重试');
+      }
+      if (!ApiService().isLoggedIn) {
+        await ApiService().restoreSession();
       }
       final uploadUrl = '${task.serverUrl}/upload';
       final headers = ApiService().authHeadersFor(uploadUrl);
@@ -170,12 +197,35 @@ class UploadService extends ChangeNotifier {
     } on DioException catch (e) {
       if (cancelToken.isCancelled) return;
 
+      final isAuthFailure = e.response?.statusCode == 401 ||
+          (e.error != null &&
+              (e.error.toString().contains('SocketException') ||
+                  e.error.toString().contains('10053')));
+
+      if (isAuthFailure && allowRelogin && await ApiService().restoreSession()) {
+        idleTimer?.cancel();
+        _cancelTokens.remove(task.id);
+        return _executeUpload(task, allowRelogin: false);
+      }
+
       task.status = AppUploadStatus.failed;
       final data = e.response?.data;
       if (data is Map<String, dynamic> && data['msg'] != null) {
         task.errorMsg = data['msg'].toString();
+      } else if (e.response?.statusCode == 401) {
+        task.errorMsg = '登录已失效，请在左侧“设置与登录”中重新登录';
+      } else if (e.response?.statusCode != null) {
+        task.errorMsg = '上传失败 (HTTP ${e.response!.statusCode})';
+      } else if (e.message != null && e.message!.isNotEmpty) {
+        task.errorMsg = '上传失败 (${e.message})';
+      } else if (e.error != null &&
+          (e.error.toString().contains('SocketException') ||
+              e.error.toString().contains('10053'))) {
+        task.errorMsg = '连接被服务器重置，请在左侧“设置与登录”中重新登录';
+      } else if (e.error != null) {
+        task.errorMsg = '上传失败 (${e.error})';
       } else {
-        task.errorMsg = '上传失败 (${e.response?.statusCode ?? e.message})';
+        task.errorMsg = '上传失败 (网络连接异常中断)';
       }
       debugPrint('上传失败 [${e.type}]: ${task.errorMsg}');
       debugPrint('  URL: ${task.serverUrl}/upload');

@@ -206,6 +206,26 @@ impl Auth {
                     });
                 }
             }
+            if matches!(source, TokenSource::Bearer) {
+                if equal_token(&token, admin_token) {
+                    return Some(Identity {
+                        role: Role::Admin,
+                        session_id: None,
+                        expires_at: None,
+                        token: Some(token),
+                        source: Some(TokenSource::Bearer),
+                    });
+                }
+                if equal_token(&token, access_token) {
+                    return Some(Identity {
+                        role: Role::File,
+                        session_id: None,
+                        expires_at: None,
+                        token: Some(token),
+                        source: Some(TokenSource::Bearer),
+                    });
+                }
+            }
         }
         if header(headers, "x-admin-token").is_some_and(|t| equal_token(t, admin_token)) {
             return Some(Identity {
@@ -228,12 +248,16 @@ impl Auth {
         None
     }
 
-    /// Whether a still-valid ticket bound to a still-valid session is presented.
-    pub fn ticket_valid(&self, ticket: &str) -> bool {
+    /// Whether a still-valid ticket bound to a still-valid session or long-lived token is presented.
+    pub fn ticket_valid(&self, ticket: &str, access_token: &str, admin_token: &str) -> bool {
         let inner = self.lock();
         let now = now_ms();
         match inner.tickets.get(ticket) {
-            Some(t) if t.expires_at > now => inner.sessions.get(&t.session_token).is_some_and(|s| s.expires_at > now),
+            Some(t) if t.expires_at > now => {
+                equal_token(&t.session_token, access_token)
+                    || equal_token(&t.session_token, admin_token)
+                    || inner.sessions.get(&t.session_token).is_some_and(|s| s.expires_at > now)
+            }
             _ => false,
         }
     }
@@ -391,12 +415,12 @@ mod tests {
         assert!(auth.identify(&wrong, A, B).is_none());
         let id = auth.identify(&headers, A, B).unwrap();
         assert_eq!(id.role, Role::File);
-        assert!(auth.ticket_valid(&ok.read_ticket));
-        assert!(!auth.ticket_valid("nope"));
+        assert!(auth.ticket_valid(&ok.read_ticket, A, B));
+        assert!(!auth.ticket_valid("nope", A, B));
         let (renewed, _) = auth.renew(&id).unwrap();
         auth.logout(&id);
-        assert!(!auth.ticket_valid(&ok.read_ticket));
-        assert!(!auth.ticket_valid(&renewed));
+        assert!(!auth.ticket_valid(&ok.read_ticket, A, B));
+        assert!(!auth.ticket_valid(&renewed, A, B));
         assert!(auth.identify(&headers, A, B).is_none());
         for _ in 0..10 {
             assert!(matches!(auth.login("bad", ip, A, B), Err(LoginError::Invalid)));
@@ -434,6 +458,32 @@ mod tests {
         assert!(!equal_token("short", "short"));
         let mut headers = HeaderMap::new();
         headers.insert("x-admin-token", HeaderValue::from_static("file-token-0123456789"));
+        assert!(auth.identify(&headers, A, B).is_none());
+    }
+
+    #[test]
+    fn bearer_long_lived_tokens() {
+        let auth = Auth::new();
+
+        // Bearer with file access token
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", HeaderValue::from_str(&format!("Bearer {A}")).unwrap());
+        let id = auth.identify(&headers, A, B).unwrap();
+        assert_eq!(id.role, Role::File);
+        assert_eq!(id.token.as_deref(), Some(A));
+
+        // Able to renew ticket with permanent Bearer token
+        let (ticket, _) = auth.renew(&id).unwrap();
+        assert!(auth.ticket_valid(&ticket, A, B));
+
+        // Bearer with admin token
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", HeaderValue::from_str(&format!("Bearer {B}")).unwrap());
+        assert_eq!(auth.identify(&headers, A, B).unwrap().role, Role::Admin);
+
+        // Bearer with invalid token
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", HeaderValue::from_static("Bearer wrong-token-123456789"));
         assert!(auth.identify(&headers, A, B).is_none());
     }
 }

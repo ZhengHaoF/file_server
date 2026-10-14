@@ -388,7 +388,8 @@ void main() {
     expect(find.byIcon(Icons.light_mode_outlined), findsOneWidget);
 
     await tester.pumpWidget(browser(themeMode: ThemeMode.dark));
-    await tester.pump();
+    // 默认主题动画 (200ms) 过半后颜色反转为暗色，触发图标 AnimatedSwitcher (210ms) 交叉淡入淡出。
+    await tester.pump(const Duration(milliseconds: 120));
     // 过渡中：旧太阳淡出、新月亮淡入，两个图标同时在树里。
     expect(find.byIcon(Icons.light_mode_outlined), findsOneWidget);
     expect(find.byIcon(Icons.dark_mode_outlined), findsOneWidget);

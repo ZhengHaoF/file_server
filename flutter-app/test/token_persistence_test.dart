@@ -310,8 +310,8 @@ void main() {
       expect(api.isLoggedIn, false);
       expect(backend.values.containsKey(fake.key), false);
 
-      await api.login('long-lived-token', remember: true);
       fake.rejectLogin = false;
+      await api.login('long-lived-token', remember: true);
       api.setServerUrl('http://127.0.0.1:1'); // nothing listens there
       await TokenStore().save('http://127.0.0.1:1', 'still-good');
       expect(await api.restoreSession(), false);

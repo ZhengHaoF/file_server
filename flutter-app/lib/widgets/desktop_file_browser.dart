@@ -36,6 +36,7 @@ class DesktopFileBrowser extends StatefulWidget {
   final ValueChanged<String> onNavigate;
   final VoidCallback onRefresh;
   final VoidCallback onUpload;
+  final VoidCallback? onUploadFolder;
   /// Receives the currently effective brightness so the toggle can flip to the
   /// opposite appearance without re-deriving it from a captured context.
   final void Function(bool isDark) onTheme;
@@ -60,6 +61,7 @@ class DesktopFileBrowser extends StatefulWidget {
     required this.onNavigate,
     required this.onRefresh,
     required this.onUpload,
+    this.onUploadFolder,
     required this.onTheme,
     required this.onToggleView,
     required this.onSort,
@@ -520,6 +522,12 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                               icon: const Icon(Icons.upload_file, size: 18),
                               label: const Text('上传文件'),
                             ),
+                            if (widget.onUploadFolder != null)
+                              OutlinedButton.icon(
+                                onPressed: widget.onUploadFolder,
+                                icon: const Icon(Icons.drive_folder_upload, size: 18),
+                                label: const Text('上传文件夹'),
+                              ),
                             _button(
                               widget.viewMode == 'img'
                                   ? Icons.view_list_outlined

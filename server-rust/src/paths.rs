@@ -150,6 +150,56 @@ pub fn fix_upload_filename(name: &str) -> ApiResult<String> {
     Ok(trimmed)
 }
 
+/// Resolve a directory inside `root`, creating missing intermediate and target directories.
+/// Refuses symlinks/junctions at each step, validates safe component names,
+/// and guarantees the final directory is strictly within `root`.
+pub async fn resolve_dir_or_create(root: &Path, input: &str) -> ApiResult<PathBuf> {
+    let segments = plan(input)?;
+    let mut current = root.to_path_buf();
+    for segment in &segments {
+        if fix_upload_filename(segment)? != *segment {
+            return Err(ApiError::bad_request("目录名包含非法字符"));
+        }
+        current.push(segment);
+        if !matches!(Path::new(segment).components().next(), Some(Component::Normal(_))) || Path::new(segment).components().count() != 1 {
+            return Err(ApiError::bad_request("非法文件路径"));
+        }
+        let _lock = LOCKS.lock(&current).await;
+        match tokio::fs::symlink_metadata(&current).await {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() || is_reparse_point(&meta) {
+                    return Err(ApiError::new(403, "不允许访问软链接或目录联接"));
+                }
+                if !meta.is_dir() {
+                    return Err(ApiError::bad_request("路径组件不是目录"));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                if let Err(err) = tokio::fs::create_dir(&current).await {
+                    if err.kind() != std::io::ErrorKind::AlreadyExists {
+                        return Err(ApiError::io("dir.create", &err));
+                    }
+                }
+                let meta = tokio::fs::symlink_metadata(&current).await.map_err(|e| ApiError::io("dir.stat", &e))?;
+                if meta.file_type().is_symlink() || is_reparse_point(&meta) {
+                    return Err(ApiError::new(403, "不允许访问软链接或目录联接"));
+                }
+                if !meta.is_dir() {
+                    return Err(ApiError::bad_request("创建后路径组件不是目录"));
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotADirectory => {
+                return Err(ApiError::bad_request("父路径不是目录"));
+            }
+            Err(e) => return Err(ApiError::io("path.resolve", &e)),
+        }
+    }
+    if !is_within(&current, root) {
+        return Err(ApiError::new(403, "不允许操作共享根目录或访问目录外的文件"));
+    }
+    Ok(current)
+}
+
 /// Atomic no-replace publication on the same filesystem: link then unlink.
 /// Never falls back to `rename`, which could overwrite a concurrently created file.
 pub async fn publish_file(temp: &Path, target: &Path) -> ApiResult<()> {

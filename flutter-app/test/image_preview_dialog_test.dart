@@ -44,6 +44,7 @@ Future<void> _openDialog(
   List<ImagePreviewItem>? items,
   int initialIndex = 0,
 }) async {
+  addTearDown(() => debugDefaultTargetPlatformOverride = null);
   final dialogItems = items ?? _items(['a.jpg', 'b.jpg', 'c.jpg']);
   await tester.pumpWidget(
     MaterialApp(
@@ -63,12 +64,10 @@ Future<void> _openDialog(
   );
   await tester.tap(find.text('open'));
   await tester.pump();
-  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 100));
 }
 
 void main() {
-  addTearDown(() => debugDefaultTargetPlatformOverride = null);
-
   group('stepIndex', () {
     test('clamps at both ends instead of wrapping', () {
       expect(stepIndex(0, 3, -1), 0);
@@ -101,6 +100,7 @@ void main() {
 
   group('platform predicates', () {
     test('desktop covers windows, linux and macOS', () {
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
       for (final platform in [
         TargetPlatform.windows,
         TargetPlatform.linux,
@@ -113,6 +113,7 @@ void main() {
     });
 
     test('mobile covers android and ios', () {
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
       for (final platform in [TargetPlatform.android, TargetPlatform.iOS]) {
         debugDefaultTargetPlatformOverride = platform;
         expect(isMobilePlatform, isTrue, reason: '$platform is mobile');
@@ -125,79 +126,103 @@ void main() {
     testWidgets('shows the file name and position of the initial image',
         (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      await _openDialog(tester, initialIndex: 1);
+      try {
+        await _openDialog(tester, initialIndex: 1);
 
-      expect(find.text('b.jpg'), findsOneWidget);
-      expect(find.text('2 / 3'), findsOneWidget);
+        expect(find.text('b.jpg'), findsOneWidget);
+        expect(find.text('2 / 3'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('arrow buttons page forward and back, clamping at the ends',
         (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      await _openDialog(tester);
+      try {
+        await _openDialog(tester);
 
-      // First image: no way back yet.
-      expect(find.byTooltip('上一个 (←)'), findsNothing);
-      expect(find.byTooltip('下一个 (→)'), findsOneWidget);
+        // First image: no way back yet.
+        expect(find.byTooltip('上一个 (←)'), findsNothing);
+        expect(find.byTooltip('下一个 (→)'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('下一个 (→)'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('b.jpg'), findsOneWidget);
-      expect(find.text('2 / 3'), findsOneWidget);
+        await tester.tap(find.byTooltip('下一个 (→)'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(find.text('b.jpg'), findsOneWidget);
+        expect(find.text('2 / 3'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('上一个 (←)'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('a.jpg'), findsOneWidget);
-      expect(find.text('1 / 3'), findsOneWidget);
+        await tester.tap(find.byTooltip('上一个 (←)'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(find.text('a.jpg'), findsOneWidget);
+        expect(find.text('1 / 3'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('下一个 (→)'));
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.tap(find.byTooltip('下一个 (→)'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('c.jpg'), findsOneWidget);
-      // Last image: the forward arrow is gone.
-      expect(find.byTooltip('下一个 (→)'), findsNothing);
-      expect(find.byTooltip('上一个 (←)'), findsOneWidget);
+        await tester.tap(find.byTooltip('下一个 (→)'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        await tester.tap(find.byTooltip('下一个 (→)'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(find.text('c.jpg'), findsOneWidget);
+        // Last image: the forward arrow is gone.
+        expect(find.byTooltip('下一个 (→)'), findsNothing);
+        expect(find.byTooltip('上一个 (←)'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('arrow keys page and escape closes the dialog',
         (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-      await _openDialog(tester);
-      final state = tester.state<ImagePreviewDialogState>(
-        find.byType(ImagePreviewDialog),
-      );
+      try {
+        await _openDialog(tester);
+        final state = tester.state<ImagePreviewDialogState>(
+          find.byType(ImagePreviewDialog),
+        );
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('2 / 3'), findsOneWidget);
-      expect(state.currentIndex, 1);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(find.text('2 / 3'), findsOneWidget);
+        expect(state.currentIndex, 1);
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('1 / 3'), findsOneWidget);
-      expect(state.currentIndex, 0);
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(find.text('1 / 3'), findsOneWidget);
+        expect(state.currentIndex, 0);
 
-      // Clamped: staying on the first image does nothing.
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('1 / 3'), findsOneWidget);
+        // Clamped: staying on the first image does nothing.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(find.text('1 / 3'), findsOneWidget);
 
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pump();
-      expect(find.byType(ImagePreviewDialog), findsNothing);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 350));
+        expect(find.byType(ImagePreviewDialog), findsNothing);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('touch platforms keep drag only: no arrow buttons',
         (tester) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      await _openDialog(tester);
+      try {
+        await _openDialog(tester);
 
-      expect(find.byTooltip('下一个 (→)'), findsNothing);
-      expect(find.byTooltip('上一个 (←)'), findsNothing);
-      // The rest of the chrome stays.
-      expect(find.text('a.jpg'), findsOneWidget);
-      expect(find.text('1 / 3'), findsOneWidget);
+        expect(find.byTooltip('下一个 (→)'), findsNothing);
+        expect(find.byTooltip('上一个 (←)'), findsNothing);
+        // The rest of the chrome stays.
+        expect(find.text('a.jpg'), findsOneWidget);
+        expect(find.text('1 / 3'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
   });
 }

@@ -8,8 +8,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:photo_view/photo_view.dart';
-import 'package:photo_view/photo_view_gallery.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -21,10 +19,11 @@ import '../services/upload_service.dart';
 import '../services/app_theme.dart';
 import '../utils/date_utils.dart';
 import '../utils/file_type_utils.dart';
+import '../utils/platform_utils.dart';
 import '../widgets/file_icon.dart';
-import '../widgets/network_log_dialog.dart';
 import '../widgets/desktop_file_browser.dart';
 import '../utils/file_browser_utils.dart';
+import '../widgets/image_preview_dialog.dart';
 import '../widgets/mobile_file_browser.dart';
 import '../widgets/server_connection_sheet.dart';
 
@@ -60,16 +59,10 @@ class _HomePageState extends State<HomePage> {
   int _historyIndex = 0;
 
   bool get _desktop =>
+      isDesktopPlatform ||
       (kIsWeb &&
           MediaQuery.sizeOf(context).width >= 700 &&
-          ![
-            TargetPlatform.android,
-            TargetPlatform.iOS,
-          ].contains(defaultTargetPlatform)) ||
-      (!kIsWeb &&
-          (defaultTargetPlatform == TargetPlatform.windows ||
-              defaultTargetPlatform == TargetPlatform.linux ||
-              defaultTargetPlatform == TargetPlatform.macOS));
+          !isMobilePlatform);
 
   @override
   void initState() {
@@ -570,25 +563,26 @@ class _HomePageState extends State<HomePage> {
         .toList();
     final currentIndex = imageFiles.indexWhere((f) => f.name == fileInfo.name);
 
-    final imageUrls = imageFiles.map((f) {
-      if (_storage.viewOriginalImage) {
-        return f.url ?? '';
-      }
-      final w =
-          (MediaQuery.of(context).size.width *
-                  MediaQuery.of(context).devicePixelRatio)
-              .round();
-      return ApiService.imagePreviewUrl(f.url ?? '', w);
+    final previewWidth = (MediaQuery.of(context).size.width *
+            MediaQuery.of(context).devicePixelRatio)
+        .round();
+    final items = imageFiles.map((f) {
+      final url = f.url ?? '';
+      final image = _storage.viewOriginalImage
+          ? NetworkImage(url)
+          : NetworkImage(ApiService.imagePreviewUrl(url, previewWidth));
+      return ImagePreviewItem(
+        image: image,
+        fileName: f.name,
+        heroTag: 'grid_image_${f.name}',
+      );
     }).toList();
-
-    final heroTags = imageFiles.map((f) => 'grid_image_${f.name}').toList();
 
     setState(() => _hasDialogOpen = true);
     showDialog(
       context: context,
-      builder: (context) => _ImagePreviewDialog(
-        imageUrls: imageUrls,
-        heroTags: heroTags,
+      builder: (context) => ImagePreviewDialog(
+        items: items,
         initialIndex: currentIndex >= 0 ? currentIndex : 0,
       ),
     ).then((_) {
@@ -937,7 +931,6 @@ class _HomePageState extends State<HomePage> {
               };
               _showSnack('外观：$label');
             },
-            onLogs: () => NetworkLogDialog.show(context),
             onToggleView: _toggleViewMode,
             onSort: (sort) => setState(() => _storage.fileSort = sort),
             onOpen: _openDesktopFile,
@@ -1306,98 +1299,3 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _ImagePreviewDialog extends StatefulWidget {
-  final List<String> imageUrls;
-  final List<String> heroTags;
-  final int initialIndex;
-
-  const _ImagePreviewDialog({
-    required this.imageUrls,
-    required this.heroTags,
-    required this.initialIndex,
-  });
-
-  @override
-  State<_ImagePreviewDialog> createState() => _ImagePreviewDialogState();
-}
-
-class _ImagePreviewDialogState extends State<_ImagePreviewDialog> {
-  late PageController _pageController;
-  late int _currentIndex;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: widget.initialIndex);
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog.fullscreen(
-      child: Stack(
-        children: [
-          PhotoViewGallery.builder(
-            pageController: _pageController,
-            itemCount: widget.imageUrls.length,
-            onPageChanged: (index) => setState(() => _currentIndex = index),
-            builder: (context, index) {
-              return PhotoViewGalleryPageOptions(
-                imageProvider: NetworkImage(widget.imageUrls[index]),
-                heroAttributes: PhotoViewHeroAttributes(
-                  tag: widget.heroTags[index],
-                ),
-                minScale: PhotoViewComputedScale.contained,
-                maxScale: PhotoViewComputedScale.covered * 5,
-                errorBuilder: (context, error, stackTrace) => const Icon(
-                  Icons.broken_image,
-                  color: Colors.white,
-                  size: 64,
-                ),
-              );
-            },
-            backgroundDecoration: const BoxDecoration(color: Colors.black),
-            loadingBuilder: (context, event) => const Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-          ),
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 8,
-            left: 8,
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white, size: 28),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
-          Positioned(
-            bottom: MediaQuery.of(context).padding.bottom + 16,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  '${_currentIndex + 1} / ${widget.imageUrls.length}',
-                  style: const TextStyle(color: Colors.white, fontSize: 14),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}

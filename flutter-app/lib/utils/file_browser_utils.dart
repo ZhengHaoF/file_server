@@ -84,3 +84,24 @@ class FileSelection {
     focused = null;
   }
 }
+
+/// Steps [current] by [delta] inside `[0, count)`, clamping at both ends so
+/// viewers never wrap around or step out of range.
+int stepIndex(int current, int count, int delta) {
+  if (count <= 0) return 0;
+  final bounded = current.clamp(0, count - 1) + delta;
+  return bounded.clamp(0, count - 1).toInt();
+}
+
+/// One mouse-wheel notch scales the current zoom by 15%, clamped to
+/// `[minScale, maxScale]` so the image stays between fit and max zoom.
+double nextWheelScale(
+  double current, {
+  required bool zoomIn,
+  required double minScale,
+  required double maxScale,
+}) {
+  final upper = maxScale > minScale ? maxScale : minScale;
+  final stepped = current * (zoomIn ? 1.15 : 1 / 1.15);
+  return stepped.clamp(minScale, upper).toDouble();
+}

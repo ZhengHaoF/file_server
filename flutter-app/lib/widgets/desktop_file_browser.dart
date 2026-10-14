@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../models/file_info.dart';
 import '../pages/download_manager_page.dart';
+import '../pages/network_log_page.dart';
 import '../pages/settings_page.dart';
 import '../utils/date_utils.dart';
 import '../utils/file_browser_utils.dart';
@@ -14,7 +15,7 @@ import 'file_icon.dart';
 /// Which section the main content area shows. `files` is the browser; the
 /// other two swap the whole content region for the full-page manager and
 /// settings views while the workspace rail stays in place.
-enum _Section { files, transfers, settings }
+enum _Section { files, transfers, settings, logs }
 
 /// Desktop interaction and layout only. Requests, authorization, uploads and
 /// destructive confirmations remain owned by HomePage.
@@ -36,7 +37,6 @@ class DesktopFileBrowser extends StatefulWidget {
   final VoidCallback onRefresh;
   final VoidCallback onUpload;
   final VoidCallback onTheme;
-  final VoidCallback onLogs;
   final VoidCallback onToggleView;
   final ValueChanged<String> onSort;
   final ValueChanged<FileInfo> onOpen;
@@ -59,7 +59,6 @@ class DesktopFileBrowser extends StatefulWidget {
     required this.onRefresh,
     required this.onUpload,
     required this.onTheme,
-    required this.onLogs,
     required this.onToggleView,
     required this.onSort,
     required this.onOpen,
@@ -300,6 +299,8 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
         final wide = bounds.maxWidth >= 1050;
         final rail = bounds.maxWidth < 900;
         final selected = _selected;
+        // 系统关闭动效（无障碍设置）时不做切换过渡，直接硬切。
+        final reduceMotion = MediaQuery.disableAnimationsOf(context);
         return Row(
           children: [
             Container(
@@ -387,8 +388,10 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                   _nav(
                     Icons.monitor_heart_outlined,
                     '网络日志',
-                    widget.onLogs,
+                    () => _showSection(_Section.logs),
                     rail,
+                    selected: _section == _Section.logs,
+                    key: const ValueKey('nav-logs'),
                   ),
                   if (!rail)
                     Padding(
@@ -407,296 +410,329 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
               ),
             ),
             Expanded(
-              child: Column(
-                children: [
-                  if (_section == _Section.files) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Row(
-                      children: [
-                        _button(
-                          Icons.arrow_back,
-                          '后退 · Alt+Left',
-                          widget.canBack ? widget.onBack : null,
-                        ),
-                        _button(
-                          Icons.arrow_forward,
-                          '前进 · Alt+Right',
-                          widget.canForward ? widget.onForward : null,
-                        ),
-                        _button(
-                          Icons.arrow_upward,
-                          '上一级',
-                          widget.path.isEmpty
-                              ? null
-                              : () {
-                                  final parts = widget.path.split('/')
-                                    ..removeLast();
-                                  widget.onNavigate(parts.join('/'));
-                                },
-                        ),
-                        _button(Icons.refresh, '刷新 · F5', widget.onRefresh),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Container(
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: colors.surfaceContainerLow,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: [
-                                  TextButton(
-                                    onPressed: () => widget.onNavigate(''),
-                                    child: const Text('全部文件'),
-                                  ),
-                                  ..._breadcrumbs(),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+              child: AnimatedSwitcher(
+                // 侧边栏几个目的地是同级切换，用 Material fade-through：
+                // 旧内容 90ms 淡出并轻微缩小，新内容 210ms 淡入并放大。
+                // 侧边栏 rail 与整体布局不动，只过渡中间内容区。
+                duration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 210),
+                reverseDuration: reduceMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 90),
+                switchInCurve: Curves.easeInOut,
+                switchOutCurve: Curves.easeInOut,
+                transitionBuilder: (child, animation) => FadeTransition(
+                  opacity: animation,
+                  child: ScaleTransition(
+                    scale: Tween<double>(
+                      begin: 0.96,
+                      end: 1.0,
+                    ).animate(animation),
+                    child: child,
                   ),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        SizedBox(
-                          width: (bounds.maxWidth - (rail ? 64 : 212) - 40)
-                              .clamp(120, 260),
-                          child: TextField(
-                            key: const Key('file-search'),
-                            controller: _search,
-                            onChanged: (_) => setState(_deriveFiles),
-                            decoration: const InputDecoration(
-                              hintText: '搜索当前目录',
-                              prefixIcon: Icon(Icons.search, size: 20),
-                              isDense: true,
-                              border: OutlineInputBorder(),
+                ),
+                child: switch (_section) {
+                  _Section.files => Column(
+                    key: const ValueKey(_Section.files),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                        child: Row(
+                          children: [
+                            _button(
+                              Icons.arrow_back,
+                              '后退 · Alt+Left',
+                              widget.canBack ? widget.onBack : null,
                             ),
-                          ),
-                        ),
-                        FilledButton.icon(
-                          onPressed: widget.onUpload,
-                          icon: const Icon(Icons.upload_file, size: 18),
-                          label: const Text('上传文件'),
-                        ),
-                        _button(
-                          widget.viewMode == 'img'
-                              ? Icons.view_list_outlined
-                              : Icons.grid_view,
-                          '切换列表 / 网格',
-                          widget.onToggleView,
-                        ),
-                        _button(
-                          Icons.density_small,
-                          '切换紧凑密度',
-                          () => setState(() => _compact = !_compact),
-                        ),
-                        PopupMenuButton<String>(
-                          tooltip: '排序',
-                          icon: const Icon(Icons.sort, size: 20),
-                          initialValue: widget.sort,
-                          onSelected: widget.onSort,
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(
-                              value: 'nameStoB',
-                              child: Text('名称：升序'),
+                            _button(
+                              Icons.arrow_forward,
+                              '前进 · Alt+Right',
+                              widget.canForward ? widget.onForward : null,
                             ),
-                            PopupMenuItem(
-                              value: 'nameBtoS',
-                              child: Text('名称：降序'),
+                            _button(
+                              Icons.arrow_upward,
+                              '上一级',
+                              widget.path.isEmpty
+                                  ? null
+                                  : () {
+                                      final parts = widget.path.split('/')
+                                        ..removeLast();
+                                      widget.onNavigate(parts.join('/'));
+                                    },
                             ),
-                            PopupMenuItem(
-                              value: 'timeBtoS',
-                              child: Text('修改时间：最新优先'),
-                            ),
-                            PopupMenuItem(
-                              value: 'timeStoB',
-                              child: Text('修改时间：最早优先'),
-                            ),
-                            PopupMenuItem(
-                              value: 'sizeStoB',
-                              child: Text('大小：从小到大'),
-                            ),
-                            PopupMenuItem(
-                              value: 'sizeBtoS',
-                              child: Text('大小：从大到小'),
+                            _button(Icons.refresh, '刷新 · F5', widget.onRefresh),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Container(
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: colors.surfaceContainerLow,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      TextButton(
+                                        onPressed: () => widget.onNavigate(''),
+                                        child: const Text('全部文件'),
+                                      ),
+                                      ..._breadcrumbs(),
+                                    ],
+                                  ),
+                                ),
+                              ),
                             ),
                           ],
                         ),
-                        if (wide)
-                          _button(
-                            Icons.info_outline,
-                            _panelVisible ? '隐藏侧栏' : '显示侧栏',
-                            () => setState(() => _panelVisible = !_panelVisible),
-                          ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    // Reserve command-bar height. Inserting it only after
-                    // selection moves the row under the second double-click.
-                    height: 48,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 4,
-                    ),
-                    color: selected.isEmpty
-                        ? colors.surface
-                        : colors.primaryContainer.withValues(alpha: .45),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            selected.isEmpty
-                                ? '单击选择 · 双击打开 · Ctrl / Shift 多选'
-                                : '已选择 ${selected.length} 项',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colors.onSurfaceVariant,
+                      ),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            SizedBox(
+                              width: (bounds.maxWidth - (rail ? 64 : 212) - 40)
+                                  .clamp(120, 260),
+                              child: TextField(
+                                key: const Key('file-search'),
+                                controller: _search,
+                                onChanged: (_) => setState(_deriveFiles),
+                                decoration: const InputDecoration(
+                                  hintText: '搜索当前目录',
+                                  prefixIcon: Icon(Icons.search, size: 20),
+                                  isDense: true,
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                            FilledButton.icon(
+                              onPressed: widget.onUpload,
+                              icon: const Icon(Icons.upload_file, size: 18),
+                              label: const Text('上传文件'),
+                            ),
+                            _button(
+                              widget.viewMode == 'img'
+                                  ? Icons.view_list_outlined
+                                  : Icons.grid_view,
+                              '切换列表 / 网格',
+                              widget.onToggleView,
+                            ),
+                            _button(
+                              Icons.density_small,
+                              '切换紧凑密度',
+                              () => setState(() => _compact = !_compact),
+                            ),
+                            PopupMenuButton<String>(
+                              tooltip: '排序',
+                              icon: const Icon(Icons.sort, size: 20),
+                              initialValue: widget.sort,
+                              onSelected: widget.onSort,
+                              itemBuilder: (_) => const [
+                                PopupMenuItem(
+                                  value: 'nameStoB',
+                                  child: Text('名称：升序'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'nameBtoS',
+                                  child: Text('名称：降序'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'timeBtoS',
+                                  child: Text('修改时间：最新优先'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'timeStoB',
+                                  child: Text('修改时间：最早优先'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'sizeStoB',
+                                  child: Text('大小：从小到大'),
+                                ),
+                                PopupMenuItem(
+                                  value: 'sizeBtoS',
+                                  child: Text('大小：从大到小'),
+                                ),
+                              ],
+                            ),
+                            if (wide)
+                              _button(
+                                Icons.info_outline,
+                                _panelVisible ? '隐藏侧栏' : '显示侧栏',
+                                () => setState(
+                                  () => _panelVisible = !_panelVisible,
+                                ),
+                              ),
+                          ],
                         ),
-                        if (selected.any((f) => f.isFile))
-                          _button(
-                            Icons.download_outlined,
-                            '下载选中文件',
-                            _downloadSelected,
-                          ),
-                        if (selected.length == 1) ...[
-                          _button(
-                            Icons.edit_outlined,
-                            '重命名 · F2',
-                            () => widget.onRename(selected.single),
-                          ),
-                          _button(
-                            Icons.delete_outline,
-                            '删除（需确认）',
-                            () => widget.onDelete(selected.single),
-                          ),
-                        ],
-                        if (selected.isNotEmpty)
-                          _button(
-                            Icons.close,
-                            '取消选择 · Escape',
-                            () => setState(_selection.clear),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (widget.error != null)
-                    Material(
-                      color: colors.errorContainer,
-                      child: Padding(
+                      ),
+                      Container(
+                        // Reserve command-bar height. Inserting it only after
+                        // selection moves the row under the second double-click.
+                        height: 48,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 20,
-                          vertical: 8,
+                          vertical: 4,
                         ),
+                        color: selected.isEmpty
+                            ? colors.surface
+                            : colors.primaryContainer.withValues(alpha: .45),
                         child: Row(
                           children: [
-                            Icon(
-                              Icons.warning_amber,
-                              size: 20,
-                              color: colors.onErrorContainer,
-                            ),
-                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                '${widget.error}${widget.files.isNotEmpty ? ' · 当前为上次成功数据' : ''}',
-                                maxLines: 3,
+                                selected.isEmpty
+                                    ? '单击选择 · 双击打开 · Ctrl / Shift 多选'
+                                    : '已选择 ${selected.length} 项',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colors.onSurfaceVariant,
+                                ),
+                                maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            TextButton(
-                              onPressed: widget.onRefresh,
-                              child: const Text('重试'),
+                            if (selected.any((f) => f.isFile))
+                              _button(
+                                Icons.download_outlined,
+                                '下载选中文件',
+                                _downloadSelected,
+                              ),
+                            if (selected.length == 1) ...[
+                              _button(
+                                Icons.edit_outlined,
+                                '重命名 · F2',
+                                () => widget.onRename(selected.single),
+                              ),
+                              _button(
+                                Icons.delete_outline,
+                                '删除（需确认）',
+                                () => widget.onDelete(selected.single),
+                              ),
+                            ],
+                            if (selected.isNotEmpty)
+                              _button(
+                                Icons.close,
+                                '取消选择 · Escape',
+                                () => setState(_selection.clear),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (widget.error != null)
+                        Material(
+                          color: colors.errorContainer,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 8,
                             ),
-                            TextButton(
-                              onPressed: () =>
-                                  _showSection(_Section.settings),
-                              child: const Text('设置'),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.warning_amber,
+                                  size: 20,
+                                  color: colors.onErrorContainer,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '${widget.error}${widget.files.isNotEmpty ? ' · 当前为上次成功数据' : ''}',
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: widget.onRefresh,
+                                  child: const Text('重试'),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      _showSection(_Section.settings),
+                                  child: const Text('设置'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      SizedBox(
+                        height: 2,
+                        child: widget.loading
+                            ? const LinearProgressIndicator()
+                            : const SizedBox.shrink(),
+                      ),
+                      Expanded(
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Focus(
+                                focusNode: _focus,
+                                autofocus: true,
+                                onKeyEvent: _key,
+                                child: _fileArea(),
+                              ),
+                            ),
+                            if (wide && _panelVisible)
+                              _detailPanel(
+                                selected.length == 1 ? selected.single : null,
+                              ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        height: 38,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        decoration: BoxDecoration(
+                          border: Border(
+                            top: BorderSide(color: colors.outlineVariant),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${_visible.length} 项${_search.text.isNotEmpty ? ' · 仅搜索当前已加载目录' : ''}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colors.onSurfaceVariant,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => _showSection(_Section.transfers),
+                              icon: const Icon(Icons.sync_alt, size: 16),
+                              label: Text(
+                                widget.activeTransfers > 0
+                                    ? '${widget.activeTransfers} 项传输中'
+                                    : '传输任务',
+                                style: const TextStyle(fontSize: 12),
+                              ),
                             ),
                           ],
                         ),
                       ),
-                    ),
-                  SizedBox(
-                    height: 2,
-                    child: widget.loading
-                        ? const LinearProgressIndicator()
-                        : const SizedBox.shrink(),
+                    ],
                   ),
-                  Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Focus(
-                            focusNode: _focus,
-                            autofocus: true,
-                            onKeyEvent: _key,
-                            child: _fileArea(),
-                          ),
-                        ),
-                        if (wide && _panelVisible)
-                          _detailPanel(
-                            selected.length == 1 ? selected.single : null,
-                          ),
-                      ],
-                    ),
+                  // SizedBox.expand：让页面填满内容区。AnimatedSwitcher 内部是
+                  // Stack，不包的话短页面会按自身高度被垂直居中。
+                  _Section.transfers => SizedBox.expand(
+                    key: const ValueKey(_Section.transfers),
+                    child: const DownloadManagerPage(),
                   ),
-                  Container(
-                    height: 38,
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(color: colors.outlineVariant),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '${_visible.length} 项${_search.text.isNotEmpty ? ' · 仅搜索当前已加载目录' : ''}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: colors.onSurfaceVariant,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => _showSection(_Section.transfers),
-                          icon: const Icon(Icons.sync_alt, size: 16),
-                          label: Text(
-                            widget.activeTransfers > 0
-                                ? '${widget.activeTransfers} 项传输中'
-                                : '传输任务',
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ),
-                      ],
-                    ),
+                  _Section.settings => SizedBox.expand(
+                    key: const ValueKey(_Section.settings),
+                    child: const SettingsPage(),
                   ),
-                  ] else
-                    Expanded(
-                      child: switch (_section) {
-                        _Section.transfers => const DownloadManagerPage(),
-                        _Section.settings => const SettingsPage(),
-                        _Section.files => const SizedBox.shrink(),
-                      },
-                    ),
-                ],
+                  _Section.logs => SizedBox.expand(
+                    key: const ValueKey(_Section.logs),
+                    child: const NetworkLogPage(),
+                  ),
+                },
               ),
             ),
           ],

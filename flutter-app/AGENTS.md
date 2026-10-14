@@ -127,7 +127,7 @@ void main() async {
 - 主页的 `ApiService` 实例字段（`final ApiService _apiService = ApiService();`）—— 因为是单例，写法上 `new` 多少次都返回同一个，**不要改成构造参数注入**
 - 视图模式（`list` / `img`）、排序、过滤、文件点击/长按动作、播放方式选择都集中在这一个文件
 - 图片文件点击后弹出 `_showMediaActions` 底部弹窗，支持预览/复制链接/下载/删除
-- 图片预览使用 `photo_view` 实现 `_ImagePreviewDialog`（支持手势缩放 + 左右滑动），网格视图带 Hero 动画
+- 图片预览使用 `photo_view` 实现 `ImagePreviewDialog`（`widgets/image_preview_dialog.dart`，支持手势缩放 + 左右滑动，桌面端另有箭头按钮、方向键、Esc 关闭与滚轮缩放），网格视图带 Hero 动画
 - 文本文件（`.txt/.md/.json/.dart` 等）点击后跳转 `/text-view` 路由
 - 添加新弹窗时注意 `_hasDialogOpen` 状态（控制返回键拦截）
 - 错误处理：404 自动回根目录，其他错误显示 SnackBar
@@ -271,7 +271,7 @@ void _saveSettings() {
 2. **可配置服务器地址**：默认 `http://localhost:3000`，存储在 `SharedPreferences`，设置页"服务设置"区块可改
 3. **AndroidManifest 补全**：补了 `INTERNET` 权限和 `usesCleartextTraffic="true"`，修了 release APK 网络不通的问题
 4. **网络日志 URL 完整显示**：列表项的 URL 从 `maxLines: 1 + ellipsis` 改成 `SelectableText` 不限行
-5. **图片预览功能**：使用 `photo_view` 实现手势缩放 + 左右滑动的图片浏览弹窗 `_ImagePreviewDialog`，网格视图带 Hero 动画
+5. **图片预览功能**：使用 `photo_view` 实现图片浏览弹窗（现位于 `widgets/image_preview_dialog.dart`，支持手势缩放 + 左右滑动；桌面端追加箭头按钮、方向键翻页、Esc 关闭与滚轮缩放），网格视图带 Hero 动画
 6. **文本文件查看器**：新增 `TextViewerPage`，通过 `/text-view` 路由访问，支持查看 `.txt / .md / .json / .dart` 等多种文本文件
 7. **Lint 清理**：移除未使用的 `share_plus` 导入和 `_goBack` 方法，修复 `deprecated_member_use`（`Color.value` → `.toARGB32()`，`withOpacity` → `.withValues()`）和 `unnecessary_underscores`
 

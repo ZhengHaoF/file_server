@@ -90,7 +90,6 @@ void main() {
         onRefresh: () => events.add('refresh'),
         onUpload: () => events.add('upload'),
         onTheme: () => events.add('theme'),
-        onLogs: () => events.add('logs'),
         onToggleView: () => events.add('toggle'),
         onSort: (s) => events.add('sort:$s'),
         onOpen: (f) => events.add('open:${f.name}'),
@@ -327,4 +326,25 @@ void main() {
       expect(events, ['path:']);
     },
   );
+
+  testWidgets('section switch crossfades instead of swapping instantly', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await StorageService().init();
+    await mount(tester);
+    expect(find.byKey(const ValueKey('file:a.txt')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('nav-transfers')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    // 过渡进行中：新页面已入树淡入，旧文件区仍在淡出，不是瞬间替换。
+    expect(find.byType(DownloadManagerPage), findsOneWidget);
+    expect(find.byKey(const ValueKey('file:a.txt')), findsOneWidget);
+
+    // 过渡结束后旧内容才卸载。
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('file:a.txt')), findsNothing);
+    expect(find.byType(DownloadManagerPage), findsOneWidget);
+  });
 }

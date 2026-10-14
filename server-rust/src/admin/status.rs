@@ -4,7 +4,7 @@ use crate::db::now_ms;
 use crate::state::SharedState;
 use serde_json::{json, Value};
 use std::collections::VecDeque;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
@@ -21,8 +21,51 @@ fn round1(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 const GB: f64 = 1024.0 * 1024.0 * 1024.0;
+
+/// Pick the value whose mount point is the deepest one containing `path`, matched by
+/// whole path components. Never a string prefix: `D:\datax` must not match `D:\data`.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn deepest_mount<'a, T>(path: &Path, mounts: impl IntoIterator<Item = (&'a Path, T)>) -> Option<T> {
+    let mut best: Option<T> = None;
+    let mut best_depth = 0usize;
+    for (mount, value) in mounts {
+        if path.starts_with(mount) {
+            let depth = mount.components().count();
+            if best.is_none() || depth > best_depth {
+                best = Some(value);
+                best_depth = depth;
+            }
+        }
+    }
+    best
+}
+
+#[cfg(windows)]
+fn disk_windows(path: &Path) -> Option<Value> {
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    // `path` is canonicalized at startup, i.e. the `\\?\` verbatim form on Windows.
+    // Normalize mount points the same way so component-wise starts_with matches.
+    let mounts: Vec<(PathBuf, &sysinfo::Disk)> = disks
+        .list()
+        .iter()
+        .map(|d| (d.mount_point().canonicalize().unwrap_or_else(|_| d.mount_point().to_path_buf()), d))
+        .collect();
+    let disk = deepest_mount(path, mounts.iter().map(|(m, d)| (m.as_path(), *d)))?;
+    let total = disk.total_space() as f64;
+    if total <= 0.0 {
+        return None;
+    }
+    // available_space is TotalNumberOfFreeBytes, so `used` keeps the same conservative
+    // meaning as the unix path (total - blocks_free, reserved blocks counted as used).
+    let available = disk.available_space() as f64;
+    let used = total - available;
+    Some(json!({
+        "total": round1(total / GB), "used": round1(used / GB), "free": round1(available / GB),
+        "usage": round1(used / total * 100.0), "available": true, "sampledAt": now_ms(),
+    }))
+}
 
 pub fn disk(path: &Path) -> Value {
     #[cfg(unix)]
@@ -41,6 +84,13 @@ pub fn disk(path: &Path) -> Value {
             }
         }
     }
+    #[cfg(windows)]
+    {
+        if let Some(value) = disk_windows(path) {
+            return value;
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
     let _ = path;
     json!({ "total": null, "used": null, "free": null, "usage": null, "available": false, "sampledAt": now_ms() })
 }
@@ -173,4 +223,46 @@ pub fn status(state: &SharedState) -> Value {
     }
     sample["server"] = server;
     sample
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deepest_mount_matches_whole_components_only() {
+        let mounts = [Path::new("D:\\"), Path::new("D:\\data"), Path::new("E:\\backup")];
+        let pick = |p: &str| deepest_mount(Path::new(p), mounts.iter().copied().map(|m| (m, m)));
+        // deepest containing mount wins over its parent
+        assert_eq!(pick("D:\\data\\share\\a.bin"), Some(Path::new("D:\\data")));
+        // a sibling sharing only a string prefix is not a match
+        assert_eq!(pick("D:\\datax"), Some(Path::new("D:\\")));
+        // path on another volume picks that volume's mount
+        assert_eq!(pick("E:\\backup\\share"), Some(Path::new("E:\\backup")));
+        // no mount contains the path
+        assert_eq!(pick("F:\\x"), None);
+        // canonicalized `\\?\` verbatim forms match each other once normalized (see disk_windows)
+        let verbatim = [Path::new(r"\\?\D:\"), Path::new(r"\\?\D:\data")];
+        let pick_v = |p: &str| deepest_mount(Path::new(p), verbatim.iter().copied().map(|m| (m, m)));
+        assert_eq!(pick_v(r"\\?\D:\data\share"), Some(Path::new(r"\\?\D:\data")));
+        assert_eq!(pick_v(r"\\?\D:\datax"), Some(Path::new(r"\\?\D:\")));
+        // empty mount list
+        assert_eq!(deepest_mount(Path::new("D:\\data"), std::iter::empty::<(&Path, &Path)>()), None);
+    }
+
+    #[test]
+    fn disk_samples_real_volume_on_every_platform() {
+        // The temp dir always exists on a real volume; sampling must not silently
+        // degrade to available:false on any supported platform (unix or windows).
+        // root_path is canonicalized at startup, so use the same form here.
+        let root = std::env::temp_dir().canonicalize().expect("temp dir must canonicalize");
+        let value = disk(&root);
+        assert_eq!(value["available"], json!(true), "disk sample degraded: {value}");
+        let total = value["total"].as_f64().expect("total must be a number");
+        assert!(total > 0.0, "total must be positive: {value}");
+        assert!(value["used"].as_f64().is_some_and(|v| v >= 0.0 && v <= total));
+        assert!(value["free"].as_f64().is_some_and(|v| v >= 0.0 && v <= total));
+        let usage = value["usage"].as_f64().expect("usage must be a number");
+        assert!((0.0..=100.0).contains(&usage), "usage out of range: {value}");
+    }
 }

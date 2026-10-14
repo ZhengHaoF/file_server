@@ -142,6 +142,8 @@ file-server --version | --help
 
 未知值一律 `null`，绝不以 0 冒充。
 
+`disk` 按共享目录所在卷采样：unix 用 `statvfs`，Windows 用 `GetDiskFreeSpaceExW`（经 sysinfo `disk` feature），按路径组件逐级匹配最深挂载点。两端 `used` 均为保守口径（unix `total - blocks_free`，Windows `total - TotalNumberOfFreeBytes`，保留块计入已用）。两平台均须 `available:true`，集成测试有跨平台断言。
+
 ## 日志
 
 - 文件：`<dataPath>/logs/app.log`（10 MB 轮转 `app.log.1..3`，读取也支持 `.gz`），supervise 写 `restart.log`。行格式 `[ISO-8601Z] [LEVEL] [category] [eventId=uuid] message`；凭据（`token=`、`Bearer`、`Basic`、JSON 中的 token/password 字段等）在写入前脱敏。

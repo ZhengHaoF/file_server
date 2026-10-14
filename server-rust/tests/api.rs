@@ -551,6 +551,11 @@ async fn admin_status_and_restart_semantics() {
         assert_eq!(status["cpu"]["warmingUp"], true);
     }
     assert!(status["memory"]["total"].as_u64().unwrap() > 0);
+    // Disk metrics must work on every supported platform (unix statvfs / windows sysinfo),
+    // otherwise the admin overview silently degrades to "未知".
+    assert_eq!(status["disk"]["available"], true, "disk metrics unavailable on this platform");
+    assert!(status["disk"]["total"].as_f64().is_some_and(|t| t > 0.0));
+    assert!(status["disk"]["usage"].as_f64().is_some_and(|u| (0.0..=100.0).contains(&u)));
     assert_eq!(status["queues"]["upload"]["limit"], 4);
     let res = s.post("/api/admin/restart", &admin).send().await.unwrap();
     assert_eq!(res.status(), 409);

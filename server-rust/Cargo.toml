@@ -45,6 +45,11 @@ uuid = { version = "1", features = ["v4"] }
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.30", features = ["fs", "signal", "process"] }
 
+[target.'cfg(windows)'.dependencies]
+# disk feature: Windows disk capacity sampling for the shared-directory KPI
+# (GetDiskFreeSpaceExW); unix keeps using statvfs via nix.
+sysinfo = { version = "0.37", features = ["disk"] }
+
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "stream"] }
 tempfile = "3"

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/file_info.dart';
 import '../widgets/file_icon.dart';
 import '../utils/file_browser_utils.dart';
@@ -20,7 +21,7 @@ class MobileFileBrowser extends StatefulWidget {
   final VoidCallback onToggleView;
   final void Function(String) onSort;
   final void Function(FileInfo) onOpen;
-  final void Function(FileInfo) onMore;
+  final void Function(FileInfo, {VoidCallback? onSelect}) onMore;
   final void Function(FileInfo) onDownload;
   final String? Function(FileInfo) thumbnail;
   const MobileFileBrowser({
@@ -76,6 +77,15 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
     final key = _key(file);
     if (!_selected.add(key)) _selected.remove(key);
   });
+
+  void _select(FileInfo file) => setState(() {
+    _selected.add(_key(file));
+  });
+
+  void _openActions(FileInfo file) {
+    HapticFeedback.lightImpact();
+    widget.onMore(file, onSelect: () => _select(file));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -297,14 +307,8 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
       title: Text(file.name, maxLines: 2, overflow: TextOverflow.ellipsis),
       subtitle: Text(file.isDirectory ? '文件夹' : formatFileBytes(file.sizeRow)),
       onTap: () => _selected.isNotEmpty ? _toggle(file) : widget.onOpen(file),
-      onLongPress: () => _toggle(file),
-      trailing: _selected.isNotEmpty
-          ? null
-          : IconButton(
-              tooltip: '文件操作',
-              icon: const Icon(Icons.more_vert),
-              onPressed: () => widget.onMore(file),
-            ),
+      onLongPress: () =>
+          _selected.isNotEmpty ? _toggle(file) : _openActions(file),
     );
   }
 
@@ -340,7 +344,8 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
               key: ValueKey(_key(file)),
               onTap: () =>
                   _selected.isNotEmpty ? _toggle(file) : widget.onOpen(file),
-              onLongPress: () => _toggle(file),
+              onLongPress: () =>
+                  _selected.isNotEmpty ? _toggle(file) : _openActions(file),
               child: Column(
                 children: [
                   Expanded(
@@ -365,24 +370,6 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
                               suffix: file.suffix,
                               isDirectory: file.isDirectory,
                               size: 40,
-                            ),
-                          ),
-                        if (_selected.isEmpty)
-                          Align(
-                            alignment: Alignment.topRight,
-                            child: IconButton(
-                              tooltip: '文件操作',
-                              style: IconButton.styleFrom(
-                                backgroundColor: Theme.of(
-                                  context,
-                                ).colorScheme.surface.withValues(alpha: 0.85),
-                              ),
-                              constraints: const BoxConstraints(
-                                minHeight: 48,
-                                minWidth: 48,
-                              ),
-                              icon: const Icon(Icons.more_vert),
-                              onPressed: () => widget.onMore(file),
                             ),
                           ),
                         if (selected)

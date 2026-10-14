@@ -265,7 +265,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _onFileLongPress(int index) {
+  void _onFileLongPress(int index, {VoidCallback? onSelect}) {
     final files = _viewMode == 'img'
         ? _getImageFilteredFileList()
         : _getSortedFileList();
@@ -274,13 +274,13 @@ class _HomePageState extends State<HomePage> {
     final fileInfo = files[index];
 
     if (fileInfo.isDirectory) {
-      _showFolderActions(fileInfo, index);
+      _showFolderActions(fileInfo, index, onSelect: onSelect);
     } else {
       final suffix = fileInfo.suffix ?? '';
       if (FileTypeUtils.isVideo(suffix) || FileTypeUtils.isImg(suffix)) {
-        _showMediaActions(fileInfo, index);
+        _showMediaActions(fileInfo, index, onSelect: onSelect);
       } else {
-        _showFileActions(fileInfo, index);
+        _showFileActions(fileInfo, index, onSelect: onSelect);
       }
     }
   }
@@ -376,7 +376,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _showMediaActions(FileInfo fileInfo, int index) {
+  void _showMediaActions(FileInfo fileInfo, int index, {VoidCallback? onSelect}) {
     setState(() => _hasDialogOpen = true);
     _showActionPanel(
       context: context,
@@ -408,6 +408,15 @@ class _HomePageState extends State<HomePage> {
                 _downloadFile(fileInfo);
               },
             ),
+            if (onSelect != null)
+              ListTile(
+                leading: const Icon(Icons.checklist),
+                title: const Text('多选'),
+                onTap: () {
+                  Navigator.pop(context);
+                  onSelect();
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.edit),
               title: const Text('重命名'),
@@ -444,7 +453,7 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _showFileActions(FileInfo fileInfo, int index) {
+  void _showFileActions(FileInfo fileInfo, int index, {VoidCallback? onSelect}) {
     setState(() => _hasDialogOpen = true);
     _showActionPanel(
       context: context,
@@ -468,6 +477,15 @@ class _HomePageState extends State<HomePage> {
                 _downloadFile(fileInfo);
               },
             ),
+            if (onSelect != null)
+              ListTile(
+                leading: const Icon(Icons.checklist),
+                title: const Text('多选'),
+                onTap: () {
+                  Navigator.pop(context);
+                  onSelect();
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.edit),
               title: const Text('重命名'),
@@ -504,7 +522,7 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _showFolderActions(FileInfo fileInfo, int index) {
+  void _showFolderActions(FileInfo fileInfo, int index, {VoidCallback? onSelect}) {
     setState(() => _hasDialogOpen = true);
     _showActionPanel(
       context: context,
@@ -520,6 +538,15 @@ class _HomePageState extends State<HomePage> {
                 _copyUrl(fileInfo);
               },
             ),
+            if (onSelect != null)
+              ListTile(
+                leading: const Icon(Icons.checklist),
+                title: const Text('多选'),
+                onTap: () {
+                  Navigator.pop(context);
+                  onSelect();
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.edit),
               title: const Text('重命名'),
@@ -1064,7 +1091,8 @@ class _HomePageState extends State<HomePage> {
       onSort: (sort) => setState(() => _storage.fileSort = sort),
       onOpen: _openDesktopFile,
       onDownload: _downloadFile,
-      onMore: (file) => _onFileLongPress(files.indexOf(file)),
+      onMore: (file, {onSelect}) =>
+          _onFileLongPress(files.indexOf(file), onSelect: onSelect),
       thumbnail: (file) => FileTypeUtils.isImg(file.suffix)
           ? ApiService.imagePreviewUrl(file.url ?? '', _storage.imgSize)
           : FileTypeUtils.isVideo(file.suffix) && _storage.videoThumbnail

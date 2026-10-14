@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../services/api_service.dart';
+import '../services/token_store.dart';
 import '../utils/server_address.dart';
 
 Future<bool?> showServerConnection(BuildContext context) =>
@@ -22,6 +23,7 @@ class _ServerConnectionSheetState extends State<ServerConnectionSheet> {
   final _address = TextEditingController(text: ApiService().serverBaseUrl);
   final _token = TextEditingController();
   bool _busy = false;
+  bool _remember = false;
   String? _error;
 
   @override
@@ -40,12 +42,23 @@ class _ServerConnectionSheetState extends State<ServerConnectionSheet> {
     try {
       final address = normalizeServerAddress(_address.text);
       final api = ApiService()..setServerUrl(address);
-      if (_token.text.trim().isNotEmpty) {
-        await api.login(_token.text.trim());
+      final token = _token.text.trim();
+      var remembered = false;
+      if (token.isNotEmpty) {
+        remembered = await api.login(token, remember: _remember);
+      } else {
+        // An empty field may still resume a token remembered for this server.
+        remembered = await api.restoreSession();
       }
       await api.verifyConnection();
       if (mounted) {
         _token.clear();
+        if (_remember && token.isNotEmpty && !remembered) {
+          // Shown on the page's messenger, so it survives closing the sheet.
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('当前系统无法安全保存令牌，重启后需重新登录')),
+          );
+        }
         Navigator.pop(context, true);
       }
     } catch (e) {
@@ -82,7 +95,9 @@ class _ServerConnectionSheetState extends State<ServerConnectionSheet> {
           children: [
             Text('连接文件服务器', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 8),
-            const Text('输入 NAS 或电脑的地址。localhost 指当前手机，不是你的 NAS。令牌只保存在本次会话。'),
+            const Text(
+              '输入 NAS 或电脑的地址。localhost 指当前手机，不是你的 NAS。令牌默认只保存在本次会话。',
+            ),
             const SizedBox(height: 20),
             TextField(
               controller: _address,
@@ -106,6 +121,25 @@ class _ServerConnectionSheetState extends State<ServerConnectionSheet> {
                 helperText: '公开只读服务器可留空',
               ),
             ),
+            if (TokenStore().isBlocked || TokenStore().isUnavailable)
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  '当前平台无法安全保存令牌，重启后需重新登录',
+                  style: TextStyle(fontSize: 12),
+                ),
+              )
+            else
+              CheckboxListTile(
+                value: _remember,
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() => _remember = value ?? false),
+                title: const Text('记住登录状态'),
+                subtitle: const Text('令牌加密保存在系统安全存储中'),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.trailing,
+              ),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),

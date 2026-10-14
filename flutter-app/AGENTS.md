@@ -25,6 +25,7 @@ Flutter 端不是单例状态管理（没有用 Provider/Riverpod），直接 `s
 | 路由 | `go_router ^14.6.2` |
 | 网络 | `dio ^5.7.0` |
 | 持久化 | `shared_preferences ^2.3.4` |
+| 安全存储 | `flutter_secure_storage ^9.2.4`（长期访问令牌，Keychain/Keystore/DPAPI，Web 端禁用） |
 | 视频播放 | `media_kit ^1.2.5` + `media_kit_video ^2.0.1` + `media_kit_libs_video ^1.0.7` |
 | 音频播放 | `audioplayers ^6.1.0` |
 | 外部唤起 | `url_launcher ^6.3.1`（VLC） |
@@ -58,6 +59,7 @@ flutter_application_1/
 │   ├── services/
 │   │   ├── api_service.dart            # 单例，Dio 封装 + 网络日志拦截器
 │   │   ├── storage_service.dart        # 单例，SharedPreferences 封装
+│   │   ├── token_store.dart            # 单例，长期访问令牌的安全存储（按 origin 隔离）
 │   │   └── network_log_service.dart    # 单例 ChangeNotifier，记录网络请求
 │   ├── utils/
 │   │   ├── date_utils.dart
@@ -90,6 +92,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   MediaKit.ensureInitialized();    // media_kit 必须在任何 Player 创建前初始化
   await StorageService().init();   // 必须先初始化，后续服务才能用
+  restoreAppTheme();
+  unawaited(ApiService().restoreSession());  // 记住的令牌在后台静默登录
   runApp(const MyApp());
 }
 ```
@@ -108,10 +112,21 @@ void main() async {
 - 持有一个 Dio 实例 + 网络日志拦截器
 - `_serverBaseUrl` **不要**用硬编码默认值，必须从 `StorageService().serverBaseUrl` 读
 - `setServerUrl(url)` 同步更新内存字段和持久化（**两个都要写**）
+- `login(token, {remember})` 用长期令牌换会话，返回"是否已记住"；`restoreSession()` 用记住的令牌静默登录（**不抛异常**，启动时调用，并发调用复用同一次在途登录）；`ensureSessionRestored()` 供首屏目录加载等待在途登录，避免把"还在换会话"误判成未登录；`logout()` 调 `POST /api/auth/logout` 并清本地态；`tokenRemembered` 供 UI 显示"已登录（令牌已保存）"
+- `getFileList` 遇 401 时，若有记住的令牌会**静默重登一次并重试**（8h 会话过期但长期令牌仍有效的常见场景）
 - `_checkResponse(response)` 统一检查响应状态码，非 2xx 时从 body 提取 `msg` 抛异常
 - `getFileUrl(path, name)` / `getVideoPreviewUrl(path)` 辅助方法用于拼接文件 URL
 - 加新接口：在类里加一个 `Future` 方法，URL 用 `'$_serverBaseUrl/xxx'`
 - `_NetworkLogInterceptor`（Dio 拦截器）定义在本文件底部，负责记录请求/响应到 `NetworkLogService`
+
+### `services/token_store.dart`
+
+- 长期访问令牌的唯一持久化出口，底层 `flutter_secure_storage`（iOS/macOS Keychain、Android Keystore、Windows DPAPI）
+- **key 按服务器 origin 隔离**：`zfiles.accessToken.<origin>`，令牌只会发回当初输入它的那台服务器
+- 用户显式勾选"记住登录状态"才写入；`login()` 不传 `remember` 会**清除**该 origin 的旧令牌（避免"取消记住"后旧令牌被复活）
+- **Flutter Web（`kIsWeb`）一律禁用**：网页版没有安全存储，令牌只进内存
+- 后端不可用（如 Linux 桌面没有 secret service、Keystore 锁定）时 `save` 返回 false、`read` 返回 null 并标记 `_unavailable`，**绝不回退到 SharedPreferences 明文**
+- `SecureStorageBackend` 抽象 + `debugOverride/debugReset` 测试钩子，测试用内存假后端驱动平台故障
 
 ### `services/network_log_service.dart`
 
@@ -125,6 +140,7 @@ void main() async {
 ### `pages/home_page.dart`
 
 - 主页的 `ApiService` 实例字段（`final ApiService _apiService = ApiService();`）—— 因为是单例，写法上 `new` 多少次都返回同一个，**不要改成构造参数注入**
+- `_loadFileList()` 开头 `await _apiService.ensureSessionRestored()`，等启动时的静默登录落地后再发请求，否则会把"还在换会话"报成"请连接并登录文件服务"
 - 视图模式（`list` / `img`）、排序、过滤、文件点击/长按动作、播放方式选择都集中在这一个文件
 - 图片文件点击后弹出 `_showMediaActions` 底部弹窗，支持预览/复制链接/下载/删除
 - 图片预览使用 `photo_view` 实现 `ImagePreviewDialog`（`widgets/image_preview_dialog.dart`，支持手势缩放 + 左右滑动，桌面端另有箭头按钮、方向键、Esc 关闭与滚轮缩放），网格视图带 Hero 动画
@@ -136,6 +152,7 @@ void main() async {
 
 - 三个区块：**服务设置 / 显示设置 / 系统操作**
 - 保存按钮是 AppBar 上的 `TextButton`（不是 ListTile）
+- "登录文件服务"：未登录弹登录对话框（含"记住登录状态"勾选，Web 端隐藏并提示无法安全保存）；已登录点击则弹退出登录确认，走 `ApiService().logout()`
 - 加新设置项：在对应区块里加一行，状态变量在 `initState` 读、`_saveSettings` 写
 
 ### `pages/text_viewer_page.dart`
@@ -195,6 +212,8 @@ void _saveSettings() {
 }
 ```
 
+**凭据不走 SharedPreferences。** 长期访问令牌只进 `TokenStore`（系统安全存储，按 origin 隔离）；`readTicket` 等短期票据只进内存。任何"把令牌写进 prefs/日志/URL"的改动都是回退项。
+
 ---
 
 ## 常用命令（PowerShell 7）
@@ -251,6 +270,34 @@ void _saveSettings() {
 
 `FileInfo` 对象的 `url` 字段在加载列表时确定，**改服务器地址后需要重新加载列表**。所以 `home_page.dart` 在设置页返回后会调 `_loadFileList()` 刷新。
 
+### 8. Windows 构建需要 ATL 组件（`flutter_secure_storage`）
+
+`flutter_secure_storage_windows` 的 C++ 实现用了 `atlstr.h`（`CA2W`/`CW2A` 字符串转换）。VS Build Tools 若只装了最小 C++ 工具集，`flutter run -d windows` 会报：
+
+```
+error C1083: 无法打开包括文件 "atlstr.h"
+```
+
+修复（管理员 PowerShell，一次性）：
+
+```powershell
+& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe" modify `
+  --installPath "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools" `
+  --add Microsoft.VisualStudio.Component.VC.ATL --quiet --norestart
+```
+
+或 Visual Studio Installer → 修改 → 单个组件 → 搜 "ATL" → 勾选 **C++ ATL for latest v143 build tools (x86 & x64)**。
+装完重开终端再构建即可；`TokenStore` 的降级逻辑只在**运行期**后端不可用（如 Linux 无 secret service）时生效，编译期缺头文件它救不了。
+
+### 9. 令牌持久化（`TokenStore`）
+
+- 只有用户勾选"记住登录状态"才写系统安全存储；`login()` 不传 `remember: true` 会**清除**该 origin 的旧令牌，别把这当成 bug 修掉
+- Web 端（`kIsWeb`）永远不保存令牌，UI 上也不要显示勾选框
+- 后端不可用时（Linux 无 secret service、Keystore 锁定）降级为"仅内存会话"并提示用户，**禁止**回退到 SharedPreferences 明文
+- `restoreSession()` 只对 401 删除已存令牌；网络不通/限流(429)时保留，避免用户被自己的失效循环锁死在登录限流外
+- 服务端登录限流是 15 分钟 10 次，任何自动重登都必须有次数上限（当前：每次 401 最多一次，重试一次后不再重登）
+- Android 自动备份会备份加密 blob 但不备份 Keystore 密钥，恢复后解密失败按"无存储"处理即可，不要报崩溃
+
 ---
 
 ## 配套 Web 项目（`网页项目/`）
@@ -274,6 +321,7 @@ void _saveSettings() {
 5. **图片预览功能**：使用 `photo_view` 实现图片浏览弹窗（现位于 `widgets/image_preview_dialog.dart`，支持手势缩放 + 左右滑动；桌面端追加箭头按钮、方向键翻页、Esc 关闭与滚轮缩放），网格视图带 Hero 动画
 6. **文本文件查看器**：新增 `TextViewerPage`，通过 `/text-view` 路由访问，支持查看 `.txt / .md / .json / .dart` 等多种文本文件
 7. **Lint 清理**：移除未使用的 `share_plus` 导入和 `_goBack` 方法，修复 `deprecated_member_use`（`Color.value` → `.toARGB32()`，`withOpacity` → `.withValues()`）和 `unnecessary_underscores`
+8. **访问令牌可安全持久化**：新增 `services/token_store.dart`（`flutter_secure_storage`，key 按 origin 隔离，Web 端禁用）；登录对话框与连接弹窗加"记住登录状态"勾选；`ApiService.restoreSession()` 启动时静默登录，`getFileList` 遇 401 静默重登并重试一次；新增 `logout()`（调 `POST /api/auth/logout`）与设置页退出登录入口
 
 ---
 

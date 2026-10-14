@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 
 import 'router/app_router.dart';
+import 'services/api_service.dart';
 import 'services/download_service.dart';
 import 'services/storage_service.dart';
 import 'services/upload_service.dart';
@@ -13,6 +16,9 @@ void main() async {
   MediaKit.ensureInitialized();
   await StorageService().init();
   restoreAppTheme();
+  // A remembered token re-authenticates in the background; the first directory
+  // load still recovers on its own if it races this call.
+  unawaited(ApiService().restoreSession());
   if (!kIsWeb) {
     await DownloadService().init();
     await UploadService().init();

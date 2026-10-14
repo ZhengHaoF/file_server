@@ -120,6 +120,13 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
+      // A remembered token may still be exchanging for a session at startup.
+      await _apiService.ensureSessionRestored();
+      if (!mounted ||
+          generation != _loadGeneration ||
+          _apiService.serverBaseUrl != _loadedServerUrl) {
+        return;
+      }
       final list = await _apiService.getFileList(path, cancelToken: cancel);
       if (!mounted || generation != _loadGeneration) return;
       setState(() {

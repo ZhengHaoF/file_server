@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../services/api_service.dart';
 import '../services/storage_service.dart';
+import '../services/token_store.dart';
 import '../services/app_theme.dart';
 import '../utils/server_address.dart';
 import '../widgets/network_log_dialog.dart';
@@ -129,51 +130,123 @@ class _SettingsPageState extends State<SettingsPage> {
 
   Future<void> _showLoginDialog() async {
     final controller = TextEditingController();
+    var remember = false;
     await showDialog(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('登录文件服务'),
-        content: TextField(
-          controller: controller,
-          obscureText: true,
-          autocorrect: false,
-          decoration: const InputDecoration(
-            labelText: '访问令牌',
-            helperText: '不会保存原始令牌，重启应用后需重新登录',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (_, setDialogState) => AlertDialog(
+          title: const Text('登录文件服务'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: controller,
+                obscureText: true,
+                autocorrect: false,
+                enableSuggestions: false,
+                decoration: const InputDecoration(
+                  labelText: '访问令牌',
+                  helperText: '令牌用于换取文件服务会话',
+                ),
+              ),
+              if (TokenStore().isBlocked || TokenStore().isUnavailable)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text(
+                    '当前平台无法安全保存令牌，重启后需重新登录',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                )
+              else
+                CheckboxListTile(
+                  value: remember,
+                  onChanged: (value) =>
+                      setDialogState(() => remember = value ?? false),
+                  title: const Text('记住登录状态'),
+                  subtitle: const Text('令牌加密保存在系统安全存储中'),
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.trailing,
+                ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () async {
-              try {
-                await _apiService.login(controller.text.trim());
-                if (dialogContext.mounted) {
-                  controller.clear();
-                  Navigator.pop(dialogContext);
-                }
-                if (mounted) {
-                  setState(() {});
-                }
-              } catch (_) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('登录失败，请检查服务器和令牌')),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final token = controller.text.trim();
+                if (token.isEmpty) return;
+                try {
+                  final remembered = await _apiService.login(
+                    token,
+                    remember: remember,
                   );
+                  if (dialogContext.mounted) {
+                    controller.clear();
+                    Navigator.pop(dialogContext);
+                  }
+                  if (mounted) {
+                    setState(() {});
+                    if (remember && !remembered) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('当前系统无法安全保存令牌，重启后需重新登录'),
+                        ),
+                      );
+                    }
+                  }
+                } catch (_) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('登录失败，请检查服务器和令牌')),
+                    );
+                  }
                 }
-              }
-            },
-            child: const Text('登录'),
-          ),
-        ],
+              },
+              child: const Text('登录'),
+            ),
+          ],
+        ),
       ),
     );
     // The dialog exit animation may still reference its controller.
     await Future<void>.delayed(const Duration(milliseconds: 300));
     controller.dispose();
+  }
+
+  Future<void> _confirmLogout() async {
+    final remembered = _apiService.tokenRemembered;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('退出登录'),
+        content: Text(
+          remembered
+              ? '将清除本地会话和已保存的令牌，之后需要重新输入访问令牌。'
+              : '将清除本地会话，重启应用后需要重新输入访问令牌。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('退出登录'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _apiService.logout();
+    if (mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已退出登录')));
+    }
   }
 
   void _restoreDefaults() async {
@@ -220,6 +293,11 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
+  String _loginSubtitle() {
+    if (!_apiService.isLoggedIn) return '输入访问令牌以浏览文件';
+    return _apiService.tokenRemembered ? '已登录（令牌已保存）' : '已登录';
+  }
+
   void _showColorPicker() {
     showDialog(
       context: context,
@@ -263,11 +341,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   ListTile(
                     title: const Text('登录文件服务'),
-                    subtitle: Text(
-                      _apiService.isLoggedIn ? '已登录' : '输入访问令牌以浏览文件',
+                    subtitle: Text(_loginSubtitle()),
+                    trailing: Icon(
+                      _apiService.isLoggedIn ? Icons.lock : Icons.lock_outline,
                     ),
-                    trailing: const Icon(Icons.lock_outline),
-                    onTap: _showLoginDialog,
+                    onTap: _apiService.isLoggedIn
+                        ? _confirmLogout
+                        : _showLoginDialog,
                   ),
                   ListTile(
                     title: const Text('服务器地址'),

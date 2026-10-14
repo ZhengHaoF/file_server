@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import '../models/file_info.dart';
 import 'network_log_service.dart';
 import 'storage_service.dart';
+import 'token_store.dart';
 import '../utils/server_address.dart';
 import '../utils/file_urls.dart';
 
@@ -14,7 +15,13 @@ class ApiService {
   String? _sessionToken;
   String? _readTicket;
   int _ticketExpiresAt = 0;
+  final TokenStore _tokenStore = TokenStore();
+  bool _tokenRemembered = false;
+  Future<bool>? _pendingRestore;
   bool get isLoggedIn => _sessionToken != null;
+
+  /// The long-lived token survives restarts in the platform secure store.
+  bool get tokenRemembered => _tokenRemembered;
 
   ApiService._internal() {
     _serverBaseUrl = StorageService().serverBaseUrl;
@@ -31,16 +38,31 @@ class ApiService {
   void setServerUrl(String url) {
     url = normalizeServerAddress(url);
     if (url != _serverBaseUrl) {
-      _sessionToken = null;
-      _readTicket = null;
-      _ticketExpiresAt = 0;
-      _dio.options.headers.remove('Authorization');
+      _clearSession();
     }
     _serverBaseUrl = url;
     StorageService().serverBaseUrl = url;
   }
 
   String get serverBaseUrl => _serverBaseUrl;
+
+  /// Server origin used to scope the remembered token; a token is only ever
+  /// replayed to the server it was entered for.
+  String get _origin {
+    try {
+      return Uri.parse(_serverBaseUrl).origin;
+    } catch (_) {
+      return _serverBaseUrl;
+    }
+  }
+
+  void _clearSession() {
+    _sessionToken = null;
+    _readTicket = null;
+    _ticketExpiresAt = 0;
+    _tokenRemembered = false;
+    _dio.options.headers.remove('Authorization');
+  }
 
   /// Separate cookie-authenticated management UI. Never include a session or ticket.
   Uri get adminUri => Uri.parse('$_serverBaseUrl/admin/');
@@ -58,7 +80,18 @@ class ApiService {
     }
   }
 
-  Future<void> login(String token) async {
+  /// Exchanges the long-lived access token for a session. Returns whether the
+  /// token was remembered; a requested remember that the platform refused is
+  /// reported so the UI can say the session is still memory-only.
+  Future<bool> login(String token, {bool remember = false}) {
+    return _login(token, remember: remember, persistDecision: true);
+  }
+
+  Future<bool> _login(
+    String token, {
+    required bool remember,
+    required bool persistDecision,
+  }) async {
     final server = _serverBaseUrl;
     final response = await _dio.post(
       '$_serverBaseUrl/api/auth/login',
@@ -68,10 +101,70 @@ class ApiService {
     if (server != _serverBaseUrl) {
       throw StateError('登录期间服务器已切换，请重新登录');
     }
-    _sessionToken = response.data['sessionToken'] as String;
-    _readTicket = response.data['readTicket'] as String;
-    _ticketExpiresAt = (response.data['ticketExpiresAt'] as num).toInt();
+    _applySession(response.data);
+    if (persistDecision) {
+      if (remember) {
+        _tokenRemembered = await _tokenStore.save(_origin, token);
+      } else {
+        // An explicit opt-out must not leave an older token to be resurrected.
+        await _tokenStore.clear(_origin);
+        _tokenRemembered = false;
+      }
+    } else {
+      _tokenRemembered = remember;
+    }
+    return _tokenRemembered;
+  }
+
+  void _applySession(dynamic data) {
+    _sessionToken = data['sessionToken'] as String;
+    _readTicket = data['readTicket'] as String;
+    _ticketExpiresAt = (data['ticketExpiresAt'] as num).toInt();
     _dio.options.headers['Authorization'] = 'Bearer $_sessionToken';
+  }
+
+  /// Silent auto-login from the remembered token. Never throws; a rejected
+  /// token is dropped while unreachable/rate-limited servers keep theirs.
+  Future<bool> restoreSession() {
+    final pending = _pendingRestore ??= _restoreSession().whenComplete(() {
+      _pendingRestore = null;
+    });
+    return pending;
+  }
+
+  /// Resolves once a startup restore has settled. Cheap when nothing is being
+  /// restored; the first directory load awaits it so a remembered token that
+  /// is still exchanging for a session is not mistaken for "not logged in".
+  Future<bool> ensureSessionRestored() {
+    return _pendingRestore ?? Future.value(false);
+  }
+
+  Future<bool> _restoreSession() async {
+    final origin = _origin;
+    final token = await _tokenStore.read(origin);
+    if (token == null) return false;
+    try {
+      return await _login(token, remember: true, persistDecision: false);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) await _tokenStore.clear(origin);
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Revokes the server session when possible and always drops local state.
+  Future<void> logout() async {
+    final server = _serverBaseUrl;
+    if (_sessionToken != null) {
+      try {
+        await _dio.post('$server/api/auth/logout');
+      } catch (_) {
+        // Server-side revocation is best effort; local state goes regardless.
+      }
+    }
+    _clearSession();
+    await _tokenStore.clear(_origin);
   }
 
   Map<String, String> authHeadersFor(String url) {
@@ -132,6 +225,14 @@ class ApiService {
   Future<List<FileInfo>> getFileList(
     String currentPath, {
     CancelToken? cancelToken,
+  }) {
+    return _getFileList(currentPath, cancelToken, allowRelogin: true);
+  }
+
+  Future<List<FileInfo>> _getFileList(
+    String currentPath,
+    CancelToken? cancelToken, {
+    required bool allowRelogin,
   }) async {
     final server = _serverBaseUrl;
     try {
@@ -168,12 +269,13 @@ class ApiService {
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) rethrow;
       if (e.response?.statusCode == 401) {
-        final hadSession = server == _serverBaseUrl && _sessionToken != null;
-        if (server == _serverBaseUrl) {
-          _sessionToken = null;
-          _readTicket = null;
-          _ticketExpiresAt = 0;
-          _dio.options.headers.remove('Authorization');
+        final sameServer = server == _serverBaseUrl;
+        final hadSession = sameServer && _sessionToken != null;
+        if (sameServer) _clearSession();
+        // An 8h session can expire while the remembered long-lived token is
+        // still valid: silently re-login once and replay the request.
+        if (hadSession && allowRelogin && await restoreSession()) {
+          return _getFileList(currentPath, cancelToken, allowRelogin: false);
         }
         throw Exception(hadSession ? '会话已失效，请连接并登录文件服务' : '请连接并登录文件服务');
       }

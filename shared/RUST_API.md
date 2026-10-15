@@ -68,8 +68,19 @@ file-server --version | --help
 | `GET\|HEAD /api/v2/content?path=<rel>` | 原文件流，Range/后缀 Range/If-Range/ETag/304，与 `/getFile` 相同的 sandbox CSP 与附件规则 |
 | `GET\|HEAD /api/v2/preview?path=<rel>&kind=image&width=320&height=240` | 图片缩略图（JPEG/PNG/GIF/SVG/WebP 源；1–5000，总像素 ≤1600 万） |
 | `GET\|HEAD /api/v2/preview?path=<rel>&kind=video` | 视频截图（最大 320×240，第 1 秒，短视频回退第 0 秒）；`width/height` 被忽略 |
+| `GET /api/v2/search?q=<关键词>` | 递归搜索整个共享目录（仅文件名），NDJSON 流式响应，见下 |
 
 预览始终返回 `image/jpeg`。预览错误：400 参数无效、413 源图像素超限（>6400 万）、422 无法解码 `PREVIEW_FAILED`、429 队列已满、503 维护中 `MAINTENANCE` 或未安装程序 `PREVIEW_UNAVAILABLE`、504 超时 `PREVIEW_TIMEOUT`。
+
+### 搜索 `GET /api/v2/search?q=`
+
+对共享根递归遍历，匹配**条目自身名称**（目录与文件都参与；大小写不敏感子串；隐藏项、软链接/reparse、非 UTF-8 名与目录列表同样排除——文件分支与目录分支都做 reparse 检查）。共享根本身也必须是真实目录且非软链接/reparse，否则 400。响应 `Content-Type: application/x-ndjson; charset=utf-8`，分块传输，每行一个 JSON：
+
+- 命中行：`{"name","path","size","isDirectory","isFile","suffix","mtime"}`（`path` 为共享根相对路径，`/` 分隔；其余字段同目录列表）
+- 心跳行：`{"tick":true}`（静默期每 5s 一次，客户端应忽略）
+- 终止行：`{"done":true,"status":"complete"|"capped"|"timeout","count":N,"skipped":M}`
+
+`status`：`complete` 遍历完成；`capped` 命中满 100 条即停（结果为遍历顺序的前 100 条，不保证完整，客户端需提示细化关键词）；`timeout` 60s 截止，返回已找到的部分结果。`skipped` 为读取失败的目录数（按项隔离，不失败整个请求）。认证与 `/api/v2/files` 相同（会话/Bearer/只读票据/`publicRead`）；流开始前的参数错误 400、未认证 401；进程内同时最多 2 个遍历，超出 429 `SEARCH_BUSY`。搜索只读，不修改文件系统；120s 处理期限只约束到响应头产生，流式推送不受限（与下载一致）。客户端不读取流：与慢客户端之间的背压由有界通道吸收，达到命中上限或超时后遍历立即停止，不会长时间占用遍历名额。
 
 ## 认证与会话
 
@@ -167,6 +178,7 @@ file-server --version | --help
 | HTTPS 证书错误 | 仅 HTTP 继续 | 拒绝启动（退出 78） | 修正证书或关闭 `httpsEnabled` |
 | 特殊文件名 | `$`、`!WxH` 冲突 | v2 接口无歧义 | 新代码用 `/api/v2/*` |
 | 默认 | 示例密码、写入开启 | 仅 loopback、写入/上传关闭、随机凭据 | 在 `config.local.json` 或后台显式开启 |
+| 搜索 | 无 | `/api/v2/search` NDJSON 流（上限 100、60s 截止、心跳保活） | 新客户端（Flutter）流式解析；旧客户端无搜索功能 |
 
 **数据迁移**：Rust 默认数据目录为 `server-rust/data`（或打包目录 `data/`），不能再把 `dataPath` 设为包含共享/配置目录的 `.`。如需沿用 Node 的 `imgCache.db`，停止服务后复制到 `<dataPath>/imgCache.db`：迁移是非破坏、只增列/表（`user_version=2`），旧表数据保留。预览缓存键已改版（`preview-rust-v1`），旧缩略图文件不再命中，会被 LRU/过期策略逐步清理或通过“清空缓存”删除。旧明文凭据 `123456` 不会被沿用，首次启动会生成随机凭据到 `auth.local.json`（也可用 `accessToken`/`restartPwd` 私有配置或环境变量指定）。
 

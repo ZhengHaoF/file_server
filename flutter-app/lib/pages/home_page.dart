@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/file_info.dart';
+import '../models/search_hit.dart';
 import '../services/api_service.dart';
 import '../services/download_service.dart';
 import '../services/storage_service.dart';
@@ -30,8 +31,10 @@ import '../widgets/server_connection_sheet.dart';
 
 class HomePage extends StatefulWidget {
   final String? path;
+  /// 搜索跳转落地时需要高亮的文件（共享根相对路径）。
+  final String? highlight;
 
-  const HomePage({super.key, this.path});
+  const HomePage({super.key, this.path, this.highlight});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -59,6 +62,21 @@ class _HomePageState extends State<HomePage> {
   final List<String> _history = [];
   int _historyIndex = 0;
 
+  // 递归搜索（整个共享目录）。查询文本由 _searchController 持有，两个浏览器共用。
+  final _searchController = TextEditingController();
+  // Q1 决策：默认整个共享范围（不是当前目录）。改成 false 会与产品决策冲突，
+  // 且用户第一次点搜索就会走错分支。
+  bool _searchScopeShare = true;
+  final List<SearchHit> _searchHits = [];
+  String _searchStatus = 'idle'; // idle|searching|complete|capped|timeout|error
+  String? _searchError;
+  int _searchGeneration = 0;
+  CancelToken? _searchCancel;
+  Timer? _searchDebounce;
+  String? _highlightPath;
+
+  static const _searchDebounceMs = 400;
+
   bool get _desktop => isDesktopLayout(context);
 
   @override
@@ -67,6 +85,7 @@ class _HomePageState extends State<HomePage> {
     _currentPath = widget.path ?? '';
     _history.add(_currentPath);
     _viewMode = _storage.model;
+    _highlightPath = widget.highlight;
     UploadService().addListener(_onUploadUpdate);
     DownloadService().addListener(_onTransferUpdate);
     UploadService().addListener(_onTransferUpdate);
@@ -78,6 +97,9 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _listCancel?.cancel('页面已关闭');
     _loadGeneration++;
+    _searchDebounce?.cancel();
+    _searchCancel?.cancel('页面已关闭');
+    _searchController.dispose();
     _apiService.removeListener(_onAuthUpdate);
     UploadService().removeListener(_onUploadUpdate);
     UploadService().removeListener(_onTransferUpdate);
@@ -92,6 +114,9 @@ class _HomePageState extends State<HomePage> {
     if (!loggedIn) {
       _listCancel?.cancel('已退出登录');
       _loadGeneration++;
+      _searchDebounce?.cancel();
+      _searchCancel?.cancel('已退出登录');
+      _searchController.clear();
       setState(() {
         _fileList = [];
         _currentPath = '';
@@ -100,6 +125,11 @@ class _HomePageState extends State<HomePage> {
         _historyIndex = 0;
         _isLoading = false;
         _loadError = '请连接并登录文件服务';
+        _searchHits.clear();
+        _searchStatus = 'idle';
+        _searchError = null;
+        _searchScopeShare = false;
+        _highlightPath = null;
       });
     } else {
       _loadFileList();
@@ -123,6 +153,13 @@ class _HomePageState extends State<HomePage> {
     super.didUpdateWidget(oldWidget);
     if (widget.path != oldWidget.path) {
       _currentPath = widget.path ?? '';
+      _loadFileList();
+      return;
+    }
+    // 同一路径重复落地（例如再次点同一个搜索结果）时刷新高亮，
+    // 否则 initState 之后 highlight 变化不会生效。
+    if (widget.highlight != oldWidget.highlight) {
+      _highlightPath = widget.highlight;
       _loadFileList();
     }
   }
@@ -152,6 +189,11 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _fileList = list;
         _isLoading = false;
+        // 定位目标不在本次加载的目录里时丢弃过期高亮。
+        if (_highlightPath != null &&
+            !list.any((f) => f.path == _highlightPath)) {
+          _highlightPath = null;
+        }
       });
     } catch (e) {
       if (!mounted || generation != _loadGeneration || cancel.isCancelled) {
@@ -164,6 +206,150 @@ class _HomePageState extends State<HomePage> {
           _fileList = [];
         }
       });
+    }
+  }
+
+  /// 关键词变化入口。当前目录范围走浏览器内存过滤（零延迟、不发请求）；
+  /// 整个共享范围走 debounce + 取消在途 + 流式请求。
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    if (!_searchScopeShare) {
+      // 当前目录范围：浏览器内存过滤，零延迟，不发请求。
+      setState(() {});
+      return;
+    }
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
+      _searchCancel?.cancel('搜索已清空');
+      _searchGeneration++;
+      setState(() {
+        _searchHits.clear();
+        _searchStatus = 'idle';
+        _searchError = null;
+      });
+      return;
+    }
+    setState(() {
+      _searchStatus = 'searching';
+      _searchError = null;
+    });
+    _searchDebounce = Timer(
+      const Duration(milliseconds: _searchDebounceMs),
+      () => _runSearch(trimmed),
+    );
+  }
+
+  void _onSearchScopeChanged(bool share) {
+    _searchDebounce?.cancel();
+    _searchCancel?.cancel('搜索范围已切换');
+    _searchGeneration++;
+    setState(() {
+      _searchScopeShare = share;
+      _searchHits.clear();
+      _searchStatus = 'idle';
+      _searchError = null;
+    });
+    if (share) {
+      final trimmed = _searchController.text.trim();
+      if (trimmed.isNotEmpty) _runSearch(trimmed);
+    }
+  }
+
+  /// 两个浏览器的 `didUpdateWidget` 在 **父组件 build 期间** 回调这里，
+  /// 所以本方法绝不能同步 `setState` / `clear()`——那会抛
+  /// `setState() or markNeedsBuild() called during build`。统一延后一帧执行。
+  void _closeSearch() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _searchDebounce?.cancel();
+      _searchCancel?.cancel('搜索已关闭');
+      _searchGeneration++;
+      _searchController.clear();
+      setState(() {
+        _searchHits.clear();
+        _searchStatus = 'idle';
+        _searchError = null;
+        _searchScopeShare = false;
+      });
+    });
+  }
+
+  Future<void> _runSearch(String query) async {
+    if (!mounted) return;
+    _searchCancel?.cancel('已发起新的搜索');
+    final cancel = _searchCancel = CancelToken();
+    final generation = ++_searchGeneration;
+    setState(() {
+      _searchStatus = 'searching';
+      _searchError = null;
+      _searchHits.clear();
+    });
+    try {
+      await _apiService.ensureSessionRestored();
+      if (!mounted || generation != _searchGeneration) return;
+      await for (final map in _apiService.searchMaps(
+        query,
+        cancelToken: cancel,
+      )) {
+        if (!mounted ||
+            generation != _searchGeneration ||
+            cancel.isCancelled) {
+          return;
+        }
+        if (map['done'] == true) {
+          setState(() => _searchStatus = map['status'] as String? ?? 'complete');
+          continue;
+        }
+        if (map['tick'] == true) continue;
+        setState(() => _searchHits.add(SearchHit.fromJson(map)));
+      }
+      // 流结束却没有终止行：连接被中断。
+      if (mounted &&
+          generation == _searchGeneration &&
+          _searchStatus == 'searching') {
+        setState(() {
+          _searchStatus = 'error';
+          _searchError = '搜索连接中断';
+        });
+      }
+    } catch (e) {
+      if (!mounted ||
+          generation != _searchGeneration ||
+          cancel.isCancelled) {
+        return;
+      }
+      setState(() {
+        _searchStatus = 'error';
+        _searchError = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
+
+  void _openSearchHit(SearchHit hit) {
+    if (hit.isDirectory) {
+      _navigateTo(hit.path);
+      return;
+    }
+    _navigateTo(hit.parentPath, highlight: hit.path);
+  }
+
+  void _navigateTo(String path, {String? highlight}) {
+    _searchDebounce?.cancel();
+    _searchCancel?.cancel('已跳转到结果所在目录');
+    _searchGeneration++;
+    setState(() => _highlightPath = highlight);
+    if (_desktop) {
+      // 桌面端同页导航：必须连 _searchScopeShare 一起复位，否则结果视图会一直
+      // 占着文件区，用户点了结果却看不到刚跳过去的那个目录。
+      setState(() {
+        _searchHits.clear();
+        _searchStatus = 'idle';
+        _searchScopeShare = false;
+      });
+      _navigateDesktop(path);
+    } else {
+      // 移动端层级推进：当前页留在栈里，返回后搜索结果仍在。
+      context.push('/browse', extra: {'path': path, 'highlight': highlight});
     }
   }
 
@@ -1044,14 +1230,7 @@ class _HomePageState extends State<HomePage> {
             canForward: _historyIndex < _history.length - 1,
             onBack: () => _moveHistory(-1),
             onForward: () => _moveHistory(1),
-            onNavigate: (path) {
-              // 桌面端设置 section 内改了服务器地址后，点“全部文件”回到浏览器时要重载。
-              final samePath = path == _currentPath;
-              final serverChanged =
-                  _apiService.serverBaseUrl != _loadedServerUrl;
-              _navigateDesktop(path);
-              if (serverChanged && samePath) _loadFileList();
-            },
+            onNavigate: _navigateTo,
             onRefresh: _loadFileList,
             onUpload: _pickAndUpload,
             // getDirectoryPath() 在 Flutter Web 不受支持：宽窗 Web 下走桌面浏览器布局，
@@ -1081,6 +1260,16 @@ class _HomePageState extends State<HomePage> {
               }
               return null;
             },
+            searchController: _searchController,
+            searchScopeShare: _searchScopeShare,
+            searchHits: _searchHits,
+            searchStatus: _searchStatus,
+            searchError: _searchError,
+            highlightPath: _highlightPath,
+            onSearchChanged: _onSearchChanged,
+            onSearchScopeChanged: _onSearchScopeChanged,
+            onSearchClose: _closeSearch,
+            onSearchOpen: _openSearchHit,
           ),
         ),
       );
@@ -1122,6 +1311,16 @@ class _HomePageState extends State<HomePage> {
           : FileTypeUtils.isVideo(file.suffix) && _storage.videoThumbnail
           ? _apiService.getVideoPreviewUrl(file.path ?? '')
           : null,
+      searchController: _searchController,
+      searchScopeShare: _searchScopeShare,
+      searchHits: _searchHits,
+      searchStatus: _searchStatus,
+      searchError: _searchError,
+      highlightPath: _highlightPath,
+      onSearchChanged: _onSearchChanged,
+      onSearchScopeChanged: _onSearchScopeChanged,
+      onSearchClose: _closeSearch,
+      onSearchOpen: _openSearchHit,
     );
   }
 
@@ -1400,4 +1599,5 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
+
 

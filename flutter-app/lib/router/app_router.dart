@@ -115,12 +115,19 @@ final GoRouter appRouter = GoRouter(
           path: '/browse',
           // 进入子目录是层级推进而非 tab 平级切换，保持右侧滑入，不用渐显。
           pageBuilder: (context, state) {
-            final path = state.extra as String? ?? '';
+            final extra = state.extra;
+            final path = extra is String
+                ? extra
+                : (extra as Map<String, dynamic>?)?['path'] as String? ?? '';
+            final highlight = extra is Map<String, dynamic>
+                ? extra['highlight'] as String?
+                : null;
             return CustomTransitionPage(
               key: state.pageKey,
               child: HomePage(
                 key: ValueKey('${ApiService().serverBaseUrl}:$path'),
                 path: path,
+                highlight: highlight,
               ),
               transitionsBuilder:
                   (context, animation, secondaryAnimation, child) {

@@ -49,6 +49,8 @@ dependencies:
   photo_view: ^0.15.0
   path_provider: ^2.1.5
   mime: ^2.0.0
+  # 手机端内嵌管理后台 WebView（Android/iOS；桌面与 Web 仍走 url_launcher 外跳）。
+  webview_flutter: ^4.14.1
   # 长期访问令牌的加密持久化（Keychain / Keystore / DPAPI）。Web 端不启用。
   flutter_secure_storage: ^9.2.4
 

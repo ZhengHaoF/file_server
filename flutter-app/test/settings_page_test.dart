@@ -14,7 +14,6 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     await StorageService().init();
     debugDefaultTargetPlatformOverride = platform;
-    addTearDown(() => debugDefaultTargetPlatformOverride = null);
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -22,6 +21,11 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: SettingsPage()));
     await tester.pumpAndSettle();
   }
+
+  /// `_verifyInvariants` runs before `addTearDown`, so the platform override must
+  /// be cleared inside the test body — otherwise the binding fails the test with
+  /// "a foundation debug variable was changed by the test".
+  void clearPlatformOverride() => debugDefaultTargetPlatformOverride = null;
 
   testWidgets('touch layout shows the display columns stepper', (tester) async {
     await pumpSettings(
@@ -34,6 +38,7 @@ void main() {
     expect(find.text('手机图片模式列数（桌面自动调整）'), findsNothing);
     // 同一区块的其他显示设置不受影响。
     expect(find.text('预览图像素'), findsOneWidget);
+    clearPlatformOverride();
   });
 
   testWidgets('desktop layout hides the display columns stepper', (
@@ -46,5 +51,6 @@ void main() {
     );
     expect(find.text('显示列数'), findsNothing);
     expect(find.text('预览图像素'), findsOneWidget);
+    clearPlatformOverride();
   });
 }

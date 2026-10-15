@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:z_files/pages/settings_page.dart';
 import 'package:z_files/services/api_service.dart';
 import 'package:z_files/services/storage_service.dart';
+import 'package:z_files/utils/platform_utils.dart';
 
 void main() {
   testWidgets(
@@ -13,6 +15,10 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       await StorageService().init();
       final api = ApiService()..setServerUrl('http://127.0.0.1:3000');
+      // Force the external-browser branch: the embedded WebView cannot be
+      // hosted in a widget test (the mobile branch is covered by device QA).
+      debugCanEmbedAdminWebView = false;
+      addTearDown(() => debugCanEmbedAdminWebView = null);
       const channel = MethodChannel('plugins.flutter.io/url_launcher');
       String? launchedUrl;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -46,6 +52,35 @@ void main() {
       expect(launchedUrl, api.adminUri.toString());
       expect(find.text('无法打开管理后台，请在浏览器中访问 ${api.adminUri}'), findsOneWidget);
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  test(
+    'embedded admin WebView is mobile-only',
+    () {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      addTearDown(() {
+        debugDefaultTargetPlatformOverride = null;
+        debugCanEmbedAdminWebView = null;
+      });
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(canEmbedAdminWebView, isTrue);
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(canEmbedAdminWebView, isTrue);
+
+      // No webview_flutter implementation on these; the external browser stays.
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      expect(canEmbedAdminWebView, isFalse);
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      expect(canEmbedAdminWebView, isFalse);
+      debugDefaultTargetPlatformOverride = TargetPlatform.linux;
+      expect(canEmbedAdminWebView, isFalse);
+
+      // An explicit override wins over platform detection.
+      debugCanEmbedAdminWebView = false;
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(canEmbedAdminWebView, isFalse);
     },
   );
 

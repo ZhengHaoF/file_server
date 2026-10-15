@@ -96,6 +96,7 @@ void main() {
     );
     addTearDown(primary.dispose);
     addTearDown(secondary.dispose);
+    const fadeRoot = ValueKey('fade-root');
 
     await tester.pumpWidget(
       MaterialApp(
@@ -106,21 +107,28 @@ void main() {
               key: const ValueKey('tab-page'),
               child: const Text('tab-page'),
             );
-            return page.transitionsBuilder(
-              context,
-              primary,
-              secondary,
-              page.child,
+            // MaterialApp's own route transition also renders FadeTransitions,
+            // so the tested subtree needs its own root to scope finders against.
+            return KeyedSubtree(
+              key: fadeRoot,
+              child: page.transitionsBuilder(
+                context,
+                primary,
+                secondary,
+                page.child,
+              ),
             );
           },
         ),
       ),
     );
     // 外层负责退场淡出，内层负责入场淡入。
-    FadeTransition outer() =>
-        tester.widget<FadeTransition>(find.byType(FadeTransition).first);
-    FadeTransition inner() =>
-        tester.widget<FadeTransition>(find.byType(FadeTransition).last);
+    final fades = find.descendant(
+      of: find.byKey(fadeRoot),
+      matching: find.byType(FadeTransition),
+    );
+    FadeTransition outer() => tester.widget<FadeTransition>(fades.first);
+    FadeTransition inner() => tester.widget<FadeTransition>(fades.last);
 
     // 入场半程：新页面半透明，外层（退场）不衰减。
     primary.value = 0.5;
@@ -144,6 +152,7 @@ void main() {
     tester,
   ) async {
     late CustomTransitionPage<void> page;
+    const fadeRoot = ValueKey('fade-root');
     await tester.pumpWidget(
       MediaQuery(
         data: const MediaQueryData(disableAnimations: true),
@@ -155,11 +164,14 @@ void main() {
                 key: const ValueKey('tab-page'),
                 child: const Text('tab-page'),
               );
-              return page.transitionsBuilder(
-                context,
-                kAlwaysCompleteAnimation,
-                kAlwaysDismissedAnimation,
-                page.child,
+              return KeyedSubtree(
+                key: fadeRoot,
+                child: page.transitionsBuilder(
+                  context,
+                  kAlwaysCompleteAnimation,
+                  kAlwaysDismissedAnimation,
+                  page.child,
+                ),
               );
             },
           ),
@@ -168,7 +180,15 @@ void main() {
     );
     expect(page.transitionDuration, Duration.zero);
     expect(page.reverseTransitionDuration, Duration.zero);
-    expect(find.byType(FadeTransition), findsNothing);
+    // Scope to the tested subtree: MaterialApp's route transition legitimately
+    // renders its own FadeTransitions even with animations disabled.
+    expect(
+      find.descendant(
+        of: find.byKey(fadeRoot),
+        matching: find.byType(FadeTransition),
+      ),
+      findsNothing,
+    );
     expect(find.text('tab-page'), findsOneWidget);
   });
 }

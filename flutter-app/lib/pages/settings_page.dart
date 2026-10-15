@@ -11,6 +11,7 @@ import '../services/app_theme.dart';
 import '../utils/platform_utils.dart';
 import '../utils/server_address.dart';
 import '../widgets/network_log_dialog.dart';
+import 'admin_webview_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -317,6 +318,9 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     if (confirmed != true) return;
     await _apiService.logout();
+    // The admin SPA session lives in the embedded WebView's cookie jar; drop
+    // it so the next 服务管理 open asks for the admin token again.
+    await clearAdminWebViewCookies();
     if (mounted) {
       setState(() {});
       ScaffoldMessenger.of(
@@ -355,8 +359,14 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _openAdmin() async {
+    final uri = _apiService.adminUri;
+    if (canEmbedAdminWebView) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => AdminWebViewPage(url: uri)),
+      );
+      return;
+    }
     try {
-      final uri = _apiService.adminUri;
       if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
         throw Exception('无法打开管理后台，请在浏览器中访问 $uri');
       }
@@ -662,14 +672,32 @@ class _SettingsPageState extends State<SettingsPage> {
     required Map<String, String> items,
     required ValueChanged<String?> onChanged,
   }) {
+    final colors = Theme.of(context).colorScheme;
+    final button = DropdownButton<String>(
+      value: value,
+      // Desktop menus size themselves to their widest item, which left the
+      // popup looking detached from the narrow trigger on Windows.
+      isDense: true,
+      borderRadius: BorderRadius.circular(8),
+      dropdownColor: colors.surface,
+      elevation: 8,
+      style: TextStyle(color: colors.onSurface, fontSize: 14),
+      items: items.entries.map((e) {
+        return DropdownMenuItem(value: e.key, child: Text(e.value));
+      }).toList(),
+      onChanged: onChanged,
+    );
     return ListTile(
       title: Text(title),
-      trailing: DropdownButton<String>(
-        value: value,
-        items: items.entries.map((e) {
-          return DropdownMenuItem(value: e.key, child: Text(e.value));
-        }).toList(),
-        onChanged: onChanged,
+      // The desktop menu route inherits this Theme, so the accent replaces
+      // the default neutral grey highlight used by the Windows popup.
+      trailing: Theme(
+        data: Theme.of(context).copyWith(
+          highlightColor: colors.primary.withValues(alpha: 0.14),
+          hoverColor: colors.primary.withValues(alpha: 0.08),
+          focusColor: Colors.transparent,
+        ),
+        child: button,
       ),
     );
   }

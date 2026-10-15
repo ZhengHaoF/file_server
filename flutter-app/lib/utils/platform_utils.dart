@@ -27,3 +27,20 @@ bool isDesktopLayout(BuildContext context) =>
     (kIsWeb &&
         MediaQuery.sizeOf(context).width >= 700 &&
         !isMobilePlatform);
+
+/// True when the management SPA (`/admin/`) can be shown in an embedded
+/// WebView instead of the external browser.
+///
+/// `webview_flutter` only ships Android/iOS implementations (instantiating its
+/// controller elsewhere throws at runtime), and a real browser stays the better
+/// admin tool on desktop — so Web and desktop keep opening the admin URI
+/// externally.
+bool get canEmbedAdminWebView {
+  final override = debugCanEmbedAdminWebView;
+  if (override != null) return override;
+  return !kIsWeb && isMobilePlatform;
+}
+
+/// Test-only override for [canEmbedAdminWebView]; `null` uses real detection.
+@visibleForTesting
+bool? debugCanEmbedAdminWebView;

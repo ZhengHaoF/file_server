@@ -323,7 +323,10 @@ error C1083: 无法打开包括文件 "atlstr.h"
 7. **Lint 清理**：移除未使用的 `share_plus` 导入和 `_goBack` 方法，修复 `deprecated_member_use`（`Color.value` → `.toARGB32()`，`withOpacity` → `.withValues()`）和 `unnecessary_underscores`
 8. **访问令牌可安全持久化**：新增 `services/token_store.dart`（`flutter_secure_storage`，key 按 origin 隔离，Web 端禁用）；登录对话框与连接弹窗加"记住登录状态"勾选；`ApiService.restoreSession()` 启动时静默登录，`getFileList` 遇 401 静默重登并重试一次；新增 `logout()`（调 `POST /api/auth/logout`）与设置页退出登录入口
 9. **桌面端上传入口合并**：命令栏的「上传文件 / 上传文件夹」两个按钮合并为单个「上传」按钮 + `MenuAnchor` 菜单（`desktop_file_browser.dart`），与移动端上传弹窗、Web 单入口保持一致；`onUploadFolder` 为 null 时菜单只保留文件路径——`home_page.dart` 按 `kIsWeb` 门控（Flutter Web 的 `getDirectoryPath` 不受支持，此前宽窗 Web 下该按钮必败）
-10. **底部 tab 切换统一为渐显**：`router/app_router.dart` 新增 `tabFadePage`（新页面 210ms 淡入、被替换页面在前 43% 即约 90ms 淡出，与桌面端 fade-through 同语言，`MediaQuery.disableAnimationsOf` 时零时长直切），`/`、`/downloads`、`/settings` 三个 tab 目的地共用；`/browse`（进入子目录的层级推进）保持右侧滑入，勿“顺手”改掉
+10. **管理后台内嵌 WebView**：新增 `pages/admin_webview_page.dart`（`webview_flutter`，仅 Android/iOS），设置页「服务管理」在手机端不再外跳浏览器，改为 App 内嵌页面。`utils/platform_utils.dart` 的 `canEmbedAdminWebView` 做平台门控（Flutter Web 与桌面继续 `url_launcher` 外跳，`webview_flutter` 在这些平台没有实现），`debugCanEmbedAdminWebView` 为测试钩子。页面**不设 JS bridge、不接收/存储/转发任何凭据**：admin 令牌由用户在 SPA 自己的登录页输入，换来的 `fs_admin_session` HttpOnly cookie 存 WebView 原生 cookie jar（8h，重启仍在）；App 登出时 `clearAdminWebViewCookies()` 清除。已知缺口：日志/配置导出走 blob `<a download>`，WebView 内无下载能力，需「在浏览器打开」使用
+11. **底部 tab 切换统一为渐显**：`router/app_router.dart` 新增 `tabFadePage`（新页面 210ms 淡入、被替换页面在前 43% 即约 90ms 淡出，与桌面端 fade-through 同语言，`MediaQuery.disableAnimationsOf` 时零时长直切），`/`、`/downloads`、`/settings` 三个 tab 目的地共用；`/browse`（进入子目录的层级推进）保持右侧滑入，勿“顺手”改掉
+12. **Windows 下拉菜单观感**：`settings_page.dart::_buildDropdownTile` 显式设置 `isDense`/`borderRadius`/`dropdownColor`/`elevation`，并用 `Theme(...copyWith(highlightColor/hoverColor))` 包住控件——桌面端菜单走 Material desktop menu 路由，默认直角、中性灰高亮，与项目橙色强调色不一致；该路由会继承控件处的 Theme，所以高亮色必须在这里覆盖。不要去改菜单弹层的定位/宽度（由系统避让算法决定，窄窗口下易出反向溢出）
+13. **Widget 测试的 platform override 清理时机**：`debugDefaultTargetPlatformOverride` 必须在**测试体内**清零，不能放进 `addTearDown`——`_verifyInvariants` 先于 tearDown 执行，会直接报 "a foundation debug variable was changed by the test"。另注意 `MaterialApp` 自身的路由过渡也会渲染 4 个 `FadeTransition`，统计被测组件时必须用 `find.descendant(of: ...)` 限定到被测子树，否则 `findsNothing` / `.first` / `.last` 全部误判
 
 ---
 

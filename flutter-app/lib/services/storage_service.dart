@@ -26,13 +26,6 @@ class StorageService {
   int get columns => _prefs.getInt('columns') ?? 3;
   set columns(int value) => _prefs.setInt('columns', value);
 
-  String get playMode {
-    // 旧版本可能存过已移除的 'vlc'，统一回落到 'ask'。
-    final value = _prefs.getString('playMode') ?? 'ask';
-    return const ['ask', 'html'].contains(value) ? value : 'ask';
-  }
-  set playMode(String value) => _prefs.setString('playMode', value);
-
   String get fileSort => _prefs.getString('fileSort') ?? 'timeStoB';
   set fileSort(String value) => _prefs.setString('fileSort', value);
 
@@ -63,7 +56,6 @@ class StorageService {
       'appearance',
       'imgSize',
       'columns',
-      'playMode',
       'fileSort',
       'folderSort',
       'themeColor',

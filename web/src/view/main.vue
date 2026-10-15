@@ -55,12 +55,6 @@
       @clickFile="clickFile" @del-file="delFile" @copy-url="copyUrl" @long-press="handleLongPress"></ImageTable>
     </div>
     <van-action-sheet
-      v-model:show="showDialog"
-      :actions="playActions"
-      cancel-text="取消"
-      @select="onPlaySelect"
-    />
-    <van-action-sheet
       v-model:show="showMediaActions"
       :actions="mediaActions"
       cancel-text="取消"
@@ -123,14 +117,6 @@
             <van-cell title="主题色">
               <template #value>
                 <pick-colors :z-index="99999" width="50" v-model:value="themeColor" />
-              </template>
-            </van-cell>
-            <van-cell title="视频打开方式">
-              <template #value>
-                <select class="select-input" v-model="playMode">
-                  <option value="ask">每次询问</option>
-                  <option value="html">网页播放器</option>
-                </select>
               </template>
             </van-cell>
             <van-cell title="文件排序方式">
@@ -277,24 +263,12 @@ const imageTableRef = ref(null);
 const contentAreaRef = ref(null);
 const infoTableKey = ref(0);
 const imageTableKey = ref(0);
-const showDialog = ref(false);
-
 const pathDisplayText = computed(() => {
   if (breadcrumbs.value.length <= 1) {
     return '根目录';
   }
   return breadcrumbs.value.map(crumb => crumb.name).join('/');
 });
-const playActions = [
-  { name: '网页播放器', value: 'html' }
-];
-const onPlaySelect = (action) => {
-  showDialog.value = false;
-  setTimeout(() => {
-    playVideo();
-  }, 300);
-};
-
 const mediaActions = [
   { name: '预览', value: 'preview' },
   { name: '复制链接', value: 'copy' },
@@ -394,11 +368,7 @@ const handleFilePreview = () => {
 
   if (isVideo(fileSuffix)) {
     playUrl.value = getFileUrl(currentPath.value, fileInfo.name);
-    if (playMode.value === 'ask') {
-      showDialog.value = true;
-    } else {
-      playVideo();
-    }
+    playVideo();
   } else if (isImg(fileSuffix)) {
     showImg();
   }
@@ -522,8 +492,7 @@ const renameValue = ref('');
 const renamingFile = ref(null);
 
 const returnPath = () => {
-  if(showDialog.value || delDialog.value || setStringShow.value || showVideoPlay.value || showFileActions.value || showMediaActions.value || showRenameDialog.value){
-    showDialog.value = false;
+  if(delDialog.value || setStringShow.value || showVideoPlay.value || showFileActions.value || showMediaActions.value || showRenameDialog.value){
     delDialog.value = false;
     setStringShow.value = false;
     showVideoPlay.value = false;
@@ -621,9 +590,6 @@ const delFile = (index) => {
   nowFileIndex.value = index;
 }
 
-const okBtn = () => {
-  showDialog.value = false;
-}
 const closeBtn = () => {
   delDialog.value = false;
 }
@@ -759,7 +725,6 @@ const uploadSingleFile = (file, destPath, onProgress) => {
 };
 
 const playVideo = () => {
-  showDialog.value = false;
   nextTick(() => {
     showVideoPlay.value = true;
   })
@@ -903,8 +868,7 @@ const backChange = (event) => {
     event.preventDefault();
   }
 
-  if(showDialog.value || delDialog.value || setStringShow.value || showVideoPlay.value || showRenameDialog.value){
-    showDialog.value = false;
+  if(delDialog.value || setStringShow.value || showVideoPlay.value || showRenameDialog.value){
     delDialog.value = false;
     setStringShow.value = false;
     showVideoPlay.value = false;
@@ -938,8 +902,6 @@ const SetString = () => {
 
 //主题色
 const themeColor = ref("#FA7868")
-//播放方式
-const playMode = ref("ask");
 //文件排序方式
 const fileSore = ref("timeStoB");
 //文件夹位置
@@ -951,7 +913,6 @@ const columns = ref(3)
 const setOk = () => {
   setStringShow.value = false;
   localStorage.setItem("imgSize", String(imgSize.value))
-  localStorage.setItem("playMode", String(playMode.value))
   localStorage.setItem("columns", String(columns.value))
   localStorage.setItem("fileSore", String(fileSore.value))
   localStorage.setItem("folderSort", String(folderSort.value))
@@ -989,8 +950,7 @@ onMounted(async () => {
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
       if (window.visualViewport.width < window.innerWidth) {
-        if (showDialog.value || delDialog.value || setStringShow.value || showVideoPlay.value || showRenameDialog.value) {
-          showDialog.value = false;
+        if (delDialog.value || setStringShow.value || showVideoPlay.value || showRenameDialog.value) {
           delDialog.value = false;
           setStringShow.value = false;
           showVideoPlay.value = false;
@@ -1006,9 +966,6 @@ onMounted(async () => {
   imgSize.value = Number(localStorage.getItem("imgSize") || 500);
   //图片模式查看列数
   columns.value = Number(localStorage.getItem("columns") || 3);
-  //默认播放方式（旧版本存过已移除的 'vlc'，统一回落到 'ask'）
-  const savedPlayMode = localStorage.getItem("playMode");
-  playMode.value = ['ask', 'html'].includes(savedPlayMode) ? savedPlayMode : "ask";
   //文件夹位置
   folderSort.value = localStorage.getItem("folderSort") || "start";
   //文件排序方式

@@ -418,7 +418,7 @@ class _HomePageState extends State<HomePage> {
     } else if (FileTypeUtils.isImg(file.suffix)) {
       _showImagePreview(file);
     } else if (FileTypeUtils.isVideo(file.suffix)) {
-      _showVideoActions(file, 0);
+      _openVideoPlayer(file);
     } else if (FileTypeUtils.isAudio(file.suffix)) {
       context.push('/audio-play?url=${Uri.encodeComponent(file.url ?? '')}');
     } else if (FileTypeUtils.isText(file.suffix)) {
@@ -456,7 +456,7 @@ class _HomePageState extends State<HomePage> {
     final suffix = fileInfo.suffix ?? '';
 
     if (FileTypeUtils.isVideo(suffix)) {
-      _showVideoActions(fileInfo, index);
+      _openVideoPlayer(fileInfo);
     } else if (FileTypeUtils.isImg(suffix)) {
       _showMediaActions(fileInfo, index);
     } else if (FileTypeUtils.isAudio(suffix)) {
@@ -513,40 +513,6 @@ class _HomePageState extends State<HomePage> {
         useRootNavigator: true,
         builder: builder,
       );
-    }
-  }
-
-  void _showVideoActions(FileInfo fileInfo, int index) {
-    final playMode = _storage.playMode;
-
-    if (playMode == 'html') {
-      _openVideoPlayer(fileInfo);
-    } else {
-      setState(() => _hasDialogOpen = true);
-      _showActionPanel(
-        context: context,
-        builder: (context) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.play_circle),
-                title: const Text('本地播放器'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _openVideoPlayer(fileInfo);
-                },
-              ),
-              ListTile(
-                leading: const Text('取消'),
-                onTap: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        ),
-      ).then((_) {
-        if (mounted) setState(() => _hasDialogOpen = false);
-      });
     }
   }
 

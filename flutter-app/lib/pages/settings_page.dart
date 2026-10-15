@@ -26,7 +26,6 @@ class _SettingsPageState extends State<SettingsPage> {
 
   late int _imgSize;
   late int _columns;
-  late String _playMode;
   late String _fileSort;
   late String _folderSort;
   late Color _themeColor;
@@ -40,7 +39,6 @@ class _SettingsPageState extends State<SettingsPage> {
     super.initState();
     _imgSize = _storage.imgSize;
     _columns = _storage.columns;
-    _playMode = _storage.playMode;
     _fileSort = _storage.fileSort;
     _folderSort = _storage.folderSort;
     _onlyShowImages = _storage.onlyShowImages;
@@ -59,7 +57,6 @@ class _SettingsPageState extends State<SettingsPage> {
   void _saveSettings() {
     _storage.imgSize = _imgSize;
     _storage.columns = _columns;
-    _storage.playMode = _playMode;
     _storage.fileSort = _fileSort;
     _storage.folderSort = _folderSort;
     _storage.onlyShowImages = _onlyShowImages;
@@ -337,7 +334,6 @@ class _SettingsPageState extends State<SettingsPage> {
       setState(() {
         _imgSize = _storage.imgSize;
         _columns = _storage.columns;
-        _playMode = _storage.playMode;
         _fileSort = _storage.fileSort;
         _folderSort = _storage.folderSort;
         _onlyShowImages = _storage.onlyShowImages;
@@ -487,15 +483,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       onChanged: (v) => setState(() => _columns = v),
                     ),
                   _buildColorTile(),
-                  _buildDropdownTile(
-                    title: '视频打开方式',
-                    value: _playMode,
-                    items: const {
-                      'ask': '每次询问',
-                      'html': '本地播放器',
-                    },
-                    onChanged: (v) => setState(() => _playMode = v!),
-                  ),
                   _buildDropdownTile(
                     title: '文件排序方式',
                     value: _fileSort,

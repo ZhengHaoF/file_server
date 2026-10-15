@@ -282,25 +282,42 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
               child: _searching && widget.searchScopeShare
                   ? _searchResults()
                   : widget.files.isEmpty && widget.error != null
-                  ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.cloud_off_outlined, size: 48),
-                            const SizedBox(height: 12),
-                            Text(widget.error!, textAlign: TextAlign.center),
-                            const SizedBox(height: 12),
-                            FilledButton(
-                              onPressed: widget.onConnect,
-                              child: const Text('连接并登录'),
+                  // 错误信息可能是整段服务端文案：必须可滚动，否则窄屏/大字号下
+                  // Center+Column 会顶破 Expanded 的高度（RenderFlex overflow）。
+                  ? LayoutBuilder(
+                      builder: (context, constraints) => SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
+                          ),
+                          child: Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.cloud_off_outlined,
+                                    size: 48,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    widget.error!,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  FilledButton(
+                                    onPressed: widget.onConnect,
+                                    child: const Text('连接并登录'),
+                                  ),
+                                  TextButton(
+                                    onPressed: widget.onRefresh,
+                                    child: const Text('重试'),
+                                  ),
+                                ],
+                              ),
                             ),
-                            TextButton(
-                              onPressed: widget.onRefresh,
-                              child: const Text('重试'),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     )

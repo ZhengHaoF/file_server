@@ -328,8 +328,16 @@ class ApiService extends ChangeNotifier {
         if (sameServer && hadSession) notifyListeners();
         throw Exception(hadSession ? '会话已失效，请连接并登录文件服务' : '请连接并登录文件服务');
       }
+      // 404 有两种来源：服务端对不存在的路径返回 `{msg:"文件或文件夹不存在",code:"NOT_FOUND"}`，
+      // 以及地址上根本不是本服务（未知路由 / 端口被其它程序占用，通常没有 msg）。
+      // 两者都必须翻译成中文后抛出：直接 rethrow 会把 DioException 长英文原文
+      // 甩到错误态界面，既不可读又会撑破移动端布局。
       if (e.response?.statusCode == 404) {
-        rethrow;
+        final data = e.response?.data;
+        if (data is Map<String, dynamic> && data.containsKey('msg')) {
+          throw Exception(data['msg'].toString());
+        }
+        throw Exception('该地址没有文件服务接口 (404)，请确认服务器地址与服务版本');
       }
       String msg = e.response == null
           ? '无法连接文件服务，请检查地址、局域网权限和网络'

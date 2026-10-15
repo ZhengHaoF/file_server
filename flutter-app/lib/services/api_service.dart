@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../models/file_info.dart';
@@ -6,6 +9,7 @@ import 'storage_service.dart';
 import 'token_store.dart';
 import '../utils/server_address.dart';
 import '../utils/file_urls.dart';
+import '../utils/ndjson.dart';
 
 class ApiService extends ChangeNotifier {
   static final ApiService _instance = ApiService._internal();
@@ -336,6 +340,93 @@ class ApiService extends ChangeNotifier {
       }
       throw Exception(msg);
     }
+  }
+
+  /// 递归搜索整个共享目录（`GET /api/v2/search`）。产出流式 map：命中行、
+  /// `{"tick": true}` 心跳行（调用方忽略）、以及结束前的
+  /// `{"done": true, "status": "complete"|"capped"|"timeout"}` 终止行。
+  /// 用独立 Dio（照抄文本预览）：流式响应不过单例的网络日志拦截器。
+  ///
+  /// 注意 `receiveTimeout` 必须为 null：Dio 5 对 `ResponseType.stream` 的接收
+  /// 超时语义是整段响应而非分块间隔，设了会把 60s 截止的长搜索提前掐断。
+  /// 空闲检测交给下面的 30s stream timeout（服务端每 5s 一次心跳）。
+  Stream<Map<String, dynamic>> searchMaps(
+    String query, {
+    CancelToken? cancelToken,
+  }) async* {
+    final server = _serverBaseUrl;
+    final dio = Dio(
+      BaseOptions(
+        followRedirects: false,
+        connectTimeout: const Duration(seconds: 10),
+      ),
+    );
+    try {
+      final response = await dio.get<ResponseBody>(
+        '$server/api/v2/search',
+        queryParameters: {'q': query},
+        cancelToken: cancelToken,
+        options: Options(
+          responseType: ResponseType.stream,
+          headers: authHeadersFor('$server/api/v2/search'),
+        ),
+      );
+      // 服务端每 5s 发心跳；空闲超过 30s 视为连接已坏。
+      yield* ndjsonMaps(
+        response.data!.stream.timeout(const Duration(seconds: 30)),
+      );
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) rethrow;
+      final status = e.response?.statusCode;
+      if (status == 401) {
+        final sameServer = server == _serverBaseUrl;
+        final hadSession = sameServer && _sessionToken != null;
+        if (sameServer) _clearSession();
+        if (hadSession && await restoreSession()) {
+          yield* searchMaps(query, cancelToken: cancelToken);
+          return;
+        }
+        if (sameServer && hadSession) notifyListeners();
+        throw Exception(
+          hadSession ? '会话已失效，请连接并登录文件服务' : '请连接并登录文件服务',
+        );
+      }
+      throw Exception(await _streamErrorMessage(e));
+    } on TimeoutException {
+      throw Exception('搜索响应超时，请重试');
+    } finally {
+      dio.close(force: true);
+    }
+  }
+
+  /// 流式响应的错误 body 不是已解析的 map（`ResponseType.stream` 下 dio 交出的是
+  /// `ResponseBody`），所以契约里 `SEARCH_BUSY` / 「关键词过长」这些 msg 必须自己
+  /// 从字节流里读出来，否则客户端只能显示一句无用的「暂不可用」。
+  static Future<String> _streamErrorMessage(DioException e) async {
+    const maxErrorBodyBytes = 4096;
+    final status = e.response?.statusCode;
+    if (status == null) return '无法连接文件服务，请检查地址、局域网权限和网络';
+    final data = e.response?.data;
+    if (data is ResponseBody) {
+      try {
+        // 按字节累积再解码：`data.stream` 是 Stream<Uint8List>，
+        // utf8.decoder 接不上这个类型，且这里本来就要做长度上限。
+        final bytes = <int>[];
+        await for (final chunk in data.stream) {
+          if (bytes.length >= maxErrorBodyBytes) break;
+          bytes.addAll(chunk);
+        }
+        final decoded = jsonDecode(utf8.decode(bytes));
+        if (decoded is Map<String, dynamic> && decoded['msg'] is String) {
+          return decoded['msg'] as String;
+        }
+      } catch (_) {
+        // Body 不是 JSON 或已被消费：退回通用文案。
+      }
+    } else if (data is Map<String, dynamic> && data['msg'] is String) {
+      return data['msg'] as String;
+    }
+    return '文件服务暂不可用，请稍后重试 ($status)';
   }
 
   Future<bool> deleteFile(String filePath) async {

@@ -271,5 +271,97 @@ void main() {
       expect(notifications, 3);
     }, _LocalHttpOverrides());
   });
+
+  test('searchMaps 流式解析 NDJSON、忽略心跳、暴露终止行', () async {
+    await HttpOverrides.runWithHttpOverrides(() async {
+      SharedPreferences.setMockInitialValues({});
+      await StorageService().init();
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        expect(request.uri.path, '/api/v2/search');
+        expect(request.uri.queryParameters['q'], '报告');
+        request.response.headers.contentType =
+            ContentType('application', 'x-ndjson');
+        request.response.write(
+          '{"name":"a.txt","path":"docs/a.txt","size":3,"isFile":true,"isDirectory":false,"suffix":".txt","mtime":"2026-01-01T00:00:00.000Z"}\n',
+        );
+        await Future.delayed(const Duration(milliseconds: 20));
+        request.response.write('{"tick":true}\n');
+        request.response
+            .write('{"done":true,"status":"complete","count":1,"skipped":0}\n');
+        await request.response.close();
+      });
+      final api = ApiService()
+        ..setServerUrl('http://127.0.0.1:${server.port}');
+      final maps = await api.searchMaps('报告').toList();
+      expect(maps.length, 3);
+      expect(maps[0]['name'], 'a.txt');
+      expect(maps[1]['tick'], true);
+      expect(maps[2]['done'], true);
+      expect(maps[2]['status'], 'complete');
+    }, _LocalHttpOverrides());
+  });
+
+  test('搜索可被取消，取消以 DioException 传出', () async {
+    await HttpOverrides.runWithHttpOverrides(() async {
+      SharedPreferences.setMockInitialValues({});
+      await StorageService().init();
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        request.response.headers.contentType =
+            ContentType('application', 'x-ndjson');
+        request.response.write('{"name":"a","path":"a","size":1,"isFile":true,"isDirectory":false}\n');
+        await request.response.flush();
+        // 挂住连接，等客户端取消。
+        await Future.delayed(const Duration(seconds: 30));
+        await request.response.close();
+      });
+      final api = ApiService()
+        ..setServerUrl('http://127.0.0.1:${server.port}');
+      final cancel = CancelToken();
+      final received = <Map<String, dynamic>>[];
+      final failure = Completer<DioException>();
+      final sub = api
+          .searchMaps('a', cancelToken: cancel)
+          .listen(received.add, onError: failure.complete);
+      await Future.delayed(const Duration(milliseconds: 200));
+      cancel.cancel('query changed');
+      final error = await failure.future
+          .timeout(const Duration(seconds: 5));
+      expect(error.type, DioExceptionType.cancel);
+      await sub.cancel();
+    }, _LocalHttpOverrides());
+  });
+
+  test('流式响应的错误 body 也要读出 msg（SEARCH_BUSY）', () async {
+    await HttpOverrides.runWithHttpOverrides(() async {
+      SharedPreferences.setMockInitialValues({});
+      await StorageService().init();
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((request) async {
+        request.response.statusCode = 429;
+        request.response.headers.contentType = ContentType.json;
+        request.response.write(
+          '{"msg":"搜索任务过多，请稍后重试","code":"SEARCH_BUSY"}',
+        );
+        await request.response.close();
+      });
+      final api = ApiService()
+        ..setServerUrl('http://127.0.0.1:${server.port}');
+      await expectLater(
+        api.searchMaps('a').toList(),
+        throwsA(
+          isA<Exception>().having(
+            (e) => e.toString(),
+            'message',
+            contains('搜索任务过多'),
+          ),
+        ),
+      );
+    }, _LocalHttpOverrides());
+  });
 }
 

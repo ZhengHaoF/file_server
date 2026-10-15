@@ -1,4 +1,5 @@
 import '../models/file_info.dart';
+import '../models/search_hit.dart';
 
 String formatFileBytes(int bytes) {
   if (bytes < 1024) return '$bytes B';
@@ -104,4 +105,37 @@ double nextWheelScale(
   final upper = maxScale > minScale ? maxScale : minScale;
   final stepped = current * (zoomIn ? 1.15 : 1 / 1.15);
   return stepped.clamp(minScale, upper).toDouble();
+}
+
+/// 搜索命中排序：目录优先，随后名称（大小写不敏感），与列表默认排序一致。
+List<SearchHit> sortSearchHits(List<SearchHit> hits) {
+  final result = List<SearchHit>.of(hits);
+  result.sort((a, b) {
+    if (a.isDirectory != b.isDirectory) return a.isDirectory ? -1 : 1;
+    final comparison = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    return comparison != 0 ? comparison : a.name.compareTo(b.name);
+  });
+  return result;
+}
+
+/// 服务端 `SEARCH_LIMIT` 的镜像。改动服务端上限时必须同步这里，
+/// 否则 capped 文案会和服务端行为对不上。
+const int kSearchResultLimit = 100;
+
+/// 搜索状态行文案。status: idle|searching|complete|capped|timeout|error。
+String searchStatusLabel(String status, int count, {String? error}) {
+  switch (status) {
+    case 'searching':
+      return '正在搜索整个共享目录… 已找到 $count 条';
+    case 'capped':
+      return '仅显示前 $kSearchResultLimit 条，请输入更精确的关键词';
+    case 'timeout':
+      return '搜索超时，结果可能不完整（已找到 $count 条）';
+    case 'error':
+      return error ?? '搜索失败';
+    case 'complete':
+      return count == 0 ? '未找到匹配项' : '共 $count 条结果';
+    default:
+      return '输入关键词开始搜索';
+  }
 }

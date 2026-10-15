@@ -256,6 +256,7 @@ async fn api_not_found() -> ApiError {
 
 pub fn build(state: SharedState) -> Router {
     use crate::files;
+    use crate::search;
     let upload = post(files::upload).layer(DefaultBodyLimit::disable());
     Router::new()
         .route("/api/auth/login", post(login))
@@ -267,6 +268,7 @@ pub fn build(state: SharedState) -> Router {
         .route("/api/v2/files", get(files::list_v2))
         .route("/api/v2/content", get(files::content_v2))
         .route("/api/v2/preview", get(files::preview_v2))
+        .route("/api/v2/search", get(search::search_v2))
         .route("/list", get(files::list))
         .route("/list/", get(files::list))
         .route("/list/{*path}", get(files::list))

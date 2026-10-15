@@ -11,6 +11,7 @@ pub mod http;
 pub mod logging;
 pub mod paths;
 pub mod previews;
+pub mod search;
 pub mod server;
 pub mod state;
 pub mod web;

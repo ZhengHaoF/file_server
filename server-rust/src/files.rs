@@ -62,7 +62,7 @@ fn parse_index(value: Option<&String>, default: i64) -> Option<i64> {
     }
 }
 
-fn iso(time: std::io::Result<std::time::SystemTime>) -> Value {
+pub(crate) fn iso(time: std::io::Result<std::time::SystemTime>) -> Value {
     match time {
         Ok(t) => {
             let dt: chrono::DateTime<chrono::Utc> = t.into();

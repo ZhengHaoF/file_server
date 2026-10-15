@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../services/token_store.dart';
 import '../services/app_theme.dart';
+import '../utils/platform_utils.dart';
 import '../utils/server_address.dart';
 import '../widgets/network_log_dialog.dart';
 
@@ -465,13 +466,16 @@ class _SettingsPageState extends State<SettingsPage> {
                     max: 5000,
                     onChanged: (v) => setState(() => _imgSize = v),
                   ),
-                  _buildStepperTile(
-                    title: '手机图片模式列数（桌面自动调整）',
-                    value: _columns,
-                    min: 2,
-                    max: 6,
-                    onChanged: (v) => setState(() => _columns = v),
-                  ),
+                  // 列数只作用于移动端触控布局；桌面端按窗口宽度自动计算列数，
+                  // 不展示这项设置。
+                  if (!isDesktopLayout(context))
+                    _buildStepperTile(
+                      title: '显示列数',
+                      value: _columns,
+                      min: 2,
+                      max: 6,
+                      onChanged: (v) => setState(() => _columns = v),
+                    ),
                   _buildColorTile(),
                   _buildDropdownTile(
                     title: '视频打开方式',

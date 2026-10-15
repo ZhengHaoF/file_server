@@ -73,6 +73,7 @@ void main() {
     String? error,
     bool loading = false,
     ThemeMode themeMode = ThemeMode.light,
+    bool folderUpload = true,
   }) => MaterialApp(
     theme: ThemeData(useMaterial3: true),
     darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
@@ -92,6 +93,9 @@ void main() {
         onNavigate: (p) => events.add('path:$p'),
         onRefresh: () => events.add('refresh'),
         onUpload: () => events.add('upload'),
+        onUploadFolder: folderUpload
+            ? () => events.add('upload-folder')
+            : null,
         onTheme: (isDark) => events.add('theme:$isDark'),
         onToggleView: () => events.add('toggle'),
         onSort: (s) => events.add('sort:$s'),
@@ -208,6 +212,44 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
     expect(events, isEmpty);
+  });
+
+  testWidgets(
+    'merged upload button exposes both file and folder actions',
+    (tester) async {
+      await mount(tester);
+      await tester.tap(find.text('上传'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择文件'), findsOneWidget);
+      expect(find.text('选择文件夹'), findsOneWidget);
+
+      await tester.tap(find.text('选择文件夹'));
+      await tester.pumpAndSettle();
+      expect(events, ['upload-folder']);
+      // 菜单选中后自动收起，不会留在界面上。
+      expect(find.text('选择文件'), findsNothing);
+
+      await tester.tap(find.text('上传'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('选择文件'));
+      await tester.pumpAndSettle();
+      expect(events, ['upload-folder', 'upload']);
+    },
+  );
+
+  testWidgets('upload menu drops folder entry when picker unsupported', (
+    tester,
+  ) async {
+    // 模拟 Flutter Web：getDirectoryPath 不可用，只保留文件路径。
+    await mount(tester, child: browser(folderUpload: false));
+    await tester.tap(find.text('上传'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择文件'), findsOneWidget);
+    expect(find.text('选择文件夹'), findsNothing);
+
+    await tester.tap(find.text('选择文件'));
+    await tester.pumpAndSettle();
+    expect(events, ['upload']);
   });
 
   testWidgets(

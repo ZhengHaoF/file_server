@@ -59,11 +59,7 @@ class _HomePageState extends State<HomePage> {
   final List<String> _history = [];
   int _historyIndex = 0;
 
-  bool get _desktop =>
-      isDesktopPlatform ||
-      (kIsWeb &&
-          MediaQuery.sizeOf(context).width >= 700 &&
-          !isMobilePlatform);
+  bool get _desktop => isDesktopLayout(context);
 
   @override
   void initState() {
@@ -1058,7 +1054,9 @@ class _HomePageState extends State<HomePage> {
             },
             onRefresh: _loadFileList,
             onUpload: _pickAndUpload,
-            onUploadFolder: _pickAndUploadFolder,
+            // getDirectoryPath() 在 Flutter Web 不受支持：宽窗 Web 下走桌面浏览器布局，
+            // 这里不提供文件夹入口，与移动端上传弹窗的 !kIsWeb 门控保持一致。
+            onUploadFolder: kIsWeb ? null : _pickAndUploadFolder,
             onTheme: (dark) {
               setAppTheme(dark ? ThemeMode.light : ThemeMode.dark);
               _showSnack(dark ? '浅色模式' : '深色模式');

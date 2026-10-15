@@ -322,6 +322,8 @@ error C1083: 无法打开包括文件 "atlstr.h"
 6. **文本文件查看器**：新增 `TextViewerPage`，通过 `/text-view` 路由访问，支持查看 `.txt / .md / .json / .dart` 等多种文本文件
 7. **Lint 清理**：移除未使用的 `share_plus` 导入和 `_goBack` 方法，修复 `deprecated_member_use`（`Color.value` → `.toARGB32()`，`withOpacity` → `.withValues()`）和 `unnecessary_underscores`
 8. **访问令牌可安全持久化**：新增 `services/token_store.dart`（`flutter_secure_storage`，key 按 origin 隔离，Web 端禁用）；登录对话框与连接弹窗加"记住登录状态"勾选；`ApiService.restoreSession()` 启动时静默登录，`getFileList` 遇 401 静默重登并重试一次；新增 `logout()`（调 `POST /api/auth/logout`）与设置页退出登录入口
+9. **桌面端上传入口合并**：命令栏的「上传文件 / 上传文件夹」两个按钮合并为单个「上传」按钮 + `MenuAnchor` 菜单（`desktop_file_browser.dart`），与移动端上传弹窗、Web 单入口保持一致；`onUploadFolder` 为 null 时菜单只保留文件路径——`home_page.dart` 按 `kIsWeb` 门控（Flutter Web 的 `getDirectoryPath` 不受支持，此前宽窗 Web 下该按钮必败）
+10. **底部 tab 切换统一为渐显**：`router/app_router.dart` 新增 `tabFadePage`（新页面 210ms 淡入、被替换页面在前 43% 即约 90ms 淡出，与桌面端 fade-through 同语言，`MediaQuery.disableAnimationsOf` 时零时长直切），`/`、`/downloads`、`/settings` 三个 tab 目的地共用；`/browse`（进入子目录的层级推进）保持右侧滑入，勿“顺手”改掉
 
 ---
 

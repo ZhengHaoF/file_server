@@ -543,17 +543,47 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                                 ),
                               ),
                             ),
-                            FilledButton.icon(
-                              onPressed: widget.onUpload,
-                              icon: const Icon(Icons.upload_file, size: 18),
-                              label: const Text('上传文件'),
-                            ),
-                            if (widget.onUploadFolder != null)
-                              OutlinedButton.icon(
-                                onPressed: widget.onUploadFolder,
-                                icon: const Icon(Icons.drive_folder_upload, size: 18),
-                                label: const Text('上传文件夹'),
+                            // 单个上传入口：文件和文件夹两条路径收进同一个菜单，
+                            // 与移动端弹窗、Web 单入口保持一致。
+                            Tooltip(
+                              message: '上传文件或文件夹',
+                              child: MenuAnchor(
+                                builder: (context, controller, _) =>
+                                    FilledButton.icon(
+                                      onPressed: () {
+                                        if (controller.isOpen) {
+                                          controller.close();
+                                        } else {
+                                          controller.open();
+                                        }
+                                      },
+                                      icon: const Icon(
+                                        Icons.upload_file,
+                                        size: 18,
+                                      ),
+                                      label: const Text('上传'),
+                                    ),
+                                menuChildren: [
+                                  MenuItemButton(
+                                    leadingIcon: const Icon(
+                                      Icons.upload_file,
+                                      size: 20,
+                                    ),
+                                    child: const Text('选择文件'),
+                                    onPressed: widget.onUpload,
+                                  ),
+                                  if (widget.onUploadFolder != null)
+                                    MenuItemButton(
+                                      leadingIcon: const Icon(
+                                        Icons.drive_folder_upload,
+                                        size: 20,
+                                      ),
+                                      child: const Text('选择文件夹'),
+                                      onPressed: widget.onUploadFolder,
+                                    ),
+                                ],
                               ),
+                            ),
                             _button(
                               widget.viewMode == 'img'
                                   ? Icons.view_list_outlined

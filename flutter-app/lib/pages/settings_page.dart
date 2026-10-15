@@ -492,7 +492,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     value: _playMode,
                     items: const {
                       'ask': '每次询问',
-                      'vlc': 'VLC播放',
                       'html': '本地播放器',
                     },
                     onChanged: (v) => setState(() => _playMode = v!),

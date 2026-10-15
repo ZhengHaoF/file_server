@@ -519,9 +519,7 @@ class _HomePageState extends State<HomePage> {
   void _showVideoActions(FileInfo fileInfo, int index) {
     final playMode = _storage.playMode;
 
-    if (playMode == 'vlc') {
-      _launchVlc(fileInfo.url ?? '');
-    } else if (playMode == 'html') {
+    if (playMode == 'html') {
       _openVideoPlayer(fileInfo);
     } else {
       setState(() => _hasDialogOpen = true);
@@ -537,14 +535,6 @@ class _HomePageState extends State<HomePage> {
                 onTap: () {
                   Navigator.pop(context);
                   _openVideoPlayer(fileInfo);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.open_in_new),
-                title: const Text('VLC 播放'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _launchVlc(fileInfo.url ?? '');
                 },
               ),
               ListTile(
@@ -574,14 +564,6 @@ class _HomePageState extends State<HomePage> {
         'currentIndex': currentIndex >= 0 ? currentIndex : 0,
       },
     );
-  }
-
-  void _launchVlc(String url) async {
-    final vlcUrl = 'vlc://$url';
-    final uri = Uri.parse(vlcUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    }
   }
 
   void _showMediaActions(FileInfo fileInfo, int index, {VoidCallback? onSelect}) {

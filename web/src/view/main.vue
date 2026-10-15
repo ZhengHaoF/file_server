@@ -129,7 +129,6 @@
               <template #value>
                 <select class="select-input" v-model="playMode">
                   <option value="ask">每次询问</option>
-                  <option value="vlc">VLC播放</option>
                   <option value="html">网页播放器</option>
                 </select>
               </template>
@@ -287,13 +286,12 @@ const pathDisplayText = computed(() => {
   return breadcrumbs.value.map(crumb => crumb.name).join('/');
 });
 const playActions = [
-  { name: 'VLC 播放', value: 'vlc' },
   { name: '网页播放器', value: 'html' }
 ];
 const onPlaySelect = (action) => {
   showDialog.value = false;
   setTimeout(() => {
-    playVideo(action.value);
+    playVideo();
   }, 300);
 };
 
@@ -399,7 +397,7 @@ const handleFilePreview = () => {
     if (playMode.value === 'ask') {
       showDialog.value = true;
     } else {
-      playVideo(playMode.value);
+      playVideo();
     }
   } else if (isImg(fileSuffix)) {
     showImg();
@@ -760,14 +758,10 @@ const uploadSingleFile = (file, destPath, onProgress) => {
   }).then((res) => res.data);
 };
 
-const playVideo = (t) => {
+const playVideo = () => {
   showDialog.value = false;
   nextTick(() => {
-    if (t === 'vlc') {
-      window.open('vlc://' + playUrl.value)
-    } else {
-      showVideoPlay.value = true;
-    }
+    showVideoPlay.value = true;
   })
 }
 
@@ -1012,8 +1006,9 @@ onMounted(async () => {
   imgSize.value = Number(localStorage.getItem("imgSize") || 500);
   //图片模式查看列数
   columns.value = Number(localStorage.getItem("columns") || 3);
-  //默认播放方式
-  playMode.value = localStorage.getItem("playMode") || "ask";
+  //默认播放方式（旧版本存过已移除的 'vlc'，统一回落到 'ask'）
+  const savedPlayMode = localStorage.getItem("playMode");
+  playMode.value = ['ask', 'html'].includes(savedPlayMode) ? savedPlayMode : "ask";
   //文件夹位置
   folderSort.value = localStorage.getItem("folderSort") || "start";
   //文件排序方式

@@ -28,7 +28,7 @@ Flutter 端不是单例状态管理（没有用 Provider/Riverpod），直接 `s
 | 安全存储 | `flutter_secure_storage ^9.2.4`（长期访问令牌，Keychain/Keystore/DPAPI，Web 端禁用） |
 | 视频播放 | `media_kit ^1.2.5` + `media_kit_video ^2.0.1` + `media_kit_libs_video ^1.0.7` |
 | 音频播放 | `audioplayers ^6.1.0` |
-| 外部唤起 | `url_launcher ^6.3.1`（VLC） |
+| 外部唤起 | `url_launcher ^6.3.1` |
 | 图片缓存 | `cached_network_image ^3.4.1` |
 | 图片预览 | `photo_view ^0.15.0` |
 | 主题色 | `flutter_colorpicker ^1.1.0` |
@@ -327,6 +327,7 @@ error C1083: 无法打开包括文件 "atlstr.h"
 11. **底部 tab 切换统一为渐显**：`router/app_router.dart` 新增 `tabFadePage`（新页面 210ms 淡入、被替换页面在前 43% 即约 90ms 淡出，与桌面端 fade-through 同语言，`MediaQuery.disableAnimationsOf` 时零时长直切），`/`、`/downloads`、`/settings` 三个 tab 目的地共用；`/browse`（进入子目录的层级推进）保持右侧滑入，勿“顺手”改掉
 12. **Windows 下拉菜单观感**：`settings_page.dart::_buildDropdownTile` 显式设置 `isDense`/`borderRadius`/`dropdownColor`/`elevation`，并用 `Theme(...copyWith(highlightColor/hoverColor))` 包住控件——桌面端菜单走 Material desktop menu 路由，默认直角、中性灰高亮，与项目橙色强调色不一致；该路由会继承控件处的 Theme，所以高亮色必须在这里覆盖。不要去改菜单弹层的定位/宽度（由系统避让算法决定，窄窗口下易出反向溢出）
 13. **Widget 测试的 platform override 清理时机**：`debugDefaultTargetPlatformOverride` 必须在**测试体内**清零，不能放进 `addTearDown`——`_verifyInvariants` 先于 tearDown 执行，会直接报 "a foundation debug variable was changed by the test"。另注意 `MaterialApp` 自身的路由过渡也会渲染 4 个 `FadeTransition`，统计被测组件时必须用 `find.descendant(of: ...)` 限定到被测子树，否则 `findsNothing` / `.first` / `.last` 全部误判
+14. **移除 VLC 外置播放**：`playMode` 去掉 `'vlc'` 分支，App 端删 `_launchVlc()` 与弹窗「VLC 播放」项，Web 端删下拉 option / `playActions` 项 / `window.open('vlc://…')`。原因是 `vlc://` 在 Android 11+（`<queries>` 未声明 scheme）和 iOS（无 `LSApplicationQueriesSchemes`）下 `canLaunchUrl` 恒为 false 且无失败反馈，属死入口。`url_launcher` 仍被管理后台外跳、下载、Web 端下载使用，**不要**顺手删依赖。旧数据里的 `'vlc'` 由 `StorageService.playMode` getter 和 Web 端 `onMounted` 白名单钳制回落 `'ask'`，勿移除该钳制
 
 ---
 

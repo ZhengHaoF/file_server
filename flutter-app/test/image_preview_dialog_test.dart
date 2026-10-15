@@ -1,7 +1,11 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:photo_view/photo_view.dart';
+import 'package:photo_view/photo_view_gallery.dart';
 import 'package:z_files/utils/file_browser_utils.dart';
 import 'package:z_files/utils/platform_utils.dart';
 import 'package:z_files/widgets/image_preview_dialog.dart';
@@ -33,6 +37,48 @@ List<ImagePreviewItem> _items(List<String> names) => names
     .map(
       (name) => ImagePreviewItem(
         image: const _BrokenImageProvider(),
+        fileName: name,
+        heroTag: 'grid_image_$name',
+      ),
+    )
+    .toList();
+
+/// Decodes a real image of a known size: photo_view only computes its
+/// contained/covered boundaries once the image has dimensions, and the broken
+/// provider above never yields any (so pinch would have nothing to scale).
+class _SizedImageProvider extends ImageProvider<_SizedImageProvider> {
+  const _SizedImageProvider(this.width, this.height);
+
+  final int width;
+  final int height;
+
+  @override
+  Future<_SizedImageProvider> obtainKey(ImageConfiguration configuration) async =>
+      this;
+
+  @override
+  ImageStreamCompleter loadImage(
+    _SizedImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
+    return OneFrameImageStreamCompleter(_paint());
+  }
+
+  Future<ImageInfo> _paint() async {
+    final recorder = ui.PictureRecorder();
+    Canvas(recorder).drawRect(
+      Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+      Paint()..color = const Color(0xFF3355AA),
+    );
+    final image = await recorder.endRecording().toImage(width, height);
+    return ImageInfo(image: image);
+  }
+}
+
+List<ImagePreviewItem> _sizedItems(List<String> names) => names
+    .map(
+      (name) => ImagePreviewItem(
+        image: const _SizedImageProvider(1200, 800),
         fileName: name,
         heroTag: 'grid_image_$name',
       ),
@@ -220,6 +266,67 @@ void main() {
         // The rest of the chrome stays.
         expect(find.text('a.jpg'), findsOneWidget);
         expect(find.text('1 / 3'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('pinch zooms in and is capped by the same fit-based ceiling '
+        'as the wheel', (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        tester.view.physicalSize = const Size(1080, 2400);
+        tester.view.devicePixelRatio = 3;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        await _openDialog(
+          tester,
+          items: _sizedItems(['a.jpg', 'b.jpg', 'c.jpg']),
+        );
+        // The real 1200×800 image has to decode before photo_view can compute
+        // its contained/covered boundaries.
+        await tester.pump(const Duration(milliseconds: 100));
+
+        final state = tester.state<ImagePreviewDialogState>(
+          find.byType(ImagePreviewDialog),
+        );
+        double liveScale() => tester
+            .widget<PhotoView>(find.byType(PhotoView).first)
+            .controller!
+            .scale!;
+
+        // 1200×800 inside a 360×800pt viewport: contained(fit) = 360/1200.
+        final fit = liveScale();
+        expect(fit, closeTo(0.3, 0.01));
+
+        final center = tester.getCenter(find.byType(PhotoViewGallery));
+        final first = await tester.startGesture(
+          center + const Offset(-40, 0),
+          pointer: 71,
+        );
+        final second = await tester.startGesture(
+          center + const Offset(40, 0),
+          pointer: 72,
+        );
+        for (var i = 0; i < 40; i++) {
+          await first.moveBy(const Offset(-30, 0));
+          await second.moveBy(const Offset(30, 0));
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        // Spreading two fingers really does zoom in.
+        expect(liveScale(), greaterThan(fit * 2));
+
+        await first.up();
+        await second.up();
+        await tester.pumpAndSettle();
+
+        // Overshoot snaps back to fit × _maxZoomFactor — the wheel's ceiling,
+        // not covered × _maxZoomFactor (which used to allow ~17× fit and blur
+        // landscape photos on portrait phones).
+        expect(liveScale(), closeTo(fit * 5, fit * 0.2));
+        // Pinching must not swipe the gallery to another image.
+        expect(state.currentIndex, 0);
       } finally {
         debugDefaultTargetPlatformOverride = null;
       }

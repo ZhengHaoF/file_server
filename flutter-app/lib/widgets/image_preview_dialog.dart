@@ -162,8 +162,11 @@ class ImagePreviewDialogState extends State<ImagePreviewDialog> {
                         tag: item.heroTag,
                       ),
                       minScale: PhotoViewComputedScale.contained,
+                      // 与滚轮缩放共用同一个基准 fit(contained) × _maxZoomFactor：
+                      // 用 covered 当基准会让双指上限远高于滚轮（横图在竖屏可达
+                      // fit 的十几倍，图片糊成一片），同一 App 不该有两套缩放上限。
                       maxScale:
-                          PhotoViewComputedScale.covered * _maxZoomFactor,
+                          PhotoViewComputedScale.contained * _maxZoomFactor,
                       errorBuilder: (context, error, stackTrace) => const Icon(
                         Icons.broken_image,
                         color: Colors.white,

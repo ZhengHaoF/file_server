@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../models/file_info.dart';
 import '../widgets/file_icon.dart';
 import '../utils/file_browser_utils.dart';
+import '../models/search_hit.dart';
 
 /// Touch-specific browser. Selection is path based, never tied to row indices.
 class MobileFileBrowser extends StatefulWidget {
@@ -24,6 +25,18 @@ class MobileFileBrowser extends StatefulWidget {
   final void Function(FileInfo, {VoidCallback? onSelect}) onMore;
   final void Function(FileInfo) onDownload;
   final String? Function(FileInfo) thumbnail;
+  // 递归搜索（整个共享目录）。查询文本与结果由 home_page 持有，本 widget 只负责
+  // 渲染与转发交互；当前目录范围仍走这里的内存过滤。
+  final TextEditingController searchController;
+  final bool searchScopeShare;
+  final List<SearchHit> searchHits;
+  final String searchStatus;
+  final String? searchError;
+  final String? highlightPath;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<bool> onSearchScopeChanged;
+  final VoidCallback onSearchClose;
+  final ValueChanged<SearchHit> onSearchOpen;
   const MobileFileBrowser({
     super.key,
     required this.files,
@@ -43,6 +56,16 @@ class MobileFileBrowser extends StatefulWidget {
     required this.onMore,
     required this.onDownload,
     required this.thumbnail,
+    required this.searchController,
+    required this.searchScopeShare,
+    required this.searchHits,
+    required this.searchStatus,
+    required this.onSearchChanged,
+    required this.onSearchScopeChanged,
+    required this.onSearchClose,
+    required this.onSearchOpen,
+    this.searchError,
+    this.highlightPath,
     this.canDownload = true,
   });
 
@@ -51,16 +74,9 @@ class MobileFileBrowser extends StatefulWidget {
 }
 
 class _MobileFileBrowserState extends State<MobileFileBrowser> {
-  final _search = TextEditingController();
   final _selected = <String>{};
   bool _searching = false;
   String _key(FileInfo file) => file.path ?? '${widget.path}/${file.name}';
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
 
   @override
   void didUpdateWidget(MobileFileBrowser oldWidget) {
@@ -69,8 +85,10 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
         oldWidget.server != widget.server ||
         (widget.files.isEmpty && oldWidget.files.isNotEmpty)) {
       _selected.clear();
-      _search.clear();
       _searching = false;
+      // 这里处于父组件 build 期间，`onSearchClose` 内部必须延后一帧
+      // （见 home_page 的实现），否则抛 setState-during-build。
+      widget.onSearchClose();
     }
     final existing = widget.files.map(_key).toSet();
     _selected.removeWhere((key) => !existing.contains(key));
@@ -93,7 +111,7 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final query = _search.text.trim().toLowerCase();
+    final query = widget.searchController.text.trim().toLowerCase();
     final files = widget.files
         .where((file) => file.name.toLowerCase().contains(query))
         .toList();
@@ -148,11 +166,11 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
               ),
             if (_selected.isEmpty)
               IconButton(
-                tooltip: '搜索当前目录',
+                tooltip: '搜索文件',
                 icon: const Icon(Icons.search),
                 onPressed: () => setState(() {
                   _searching = !_searching;
-                  if (!_searching) _search.clear();
+                  if (!_searching) widget.onSearchClose();
                 }),
               ),
             PopupMenuButton<String>(
@@ -210,15 +228,43 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
             if (_searching)
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: TextField(
-                  controller: _search,
-                  autofocus: true,
-                  onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
-                    labelText: '搜索当前目录',
-                    prefixIcon: Icon(Icons.search),
-                    helperText: '仅筛选当前目录，不包含子目录',
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    TextField(
+                      controller: widget.searchController,
+                      autofocus: true,
+                      onChanged: (text) {
+                        setState(() {});
+                        widget.onSearchChanged(text);
+                      },
+                      decoration: InputDecoration(
+                        labelText: widget.searchScopeShare
+                            ? '搜索整个共享目录'
+                            : '搜索当前目录',
+                        prefixIcon: const Icon(Icons.search),
+                        helperText: widget.searchScopeShare
+                            ? '递归匹配文件名，出现一条显示一条'
+                            : '仅筛选当前目录，不包含子目录',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(
+                          value: false,
+                          label: Text('当前目录'),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          label: Text('整个共享'),
+                        ),
+                      ],
+                      selected: {widget.searchScopeShare},
+                      onSelectionChanged: (selection) =>
+                          widget.onSearchScopeChanged(selection.first),
+                    ),
+                  ],
                 ),
               ),
             if (widget.error != null && widget.files.isNotEmpty)
@@ -233,7 +279,9 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
               ),
             if (widget.loading) const LinearProgressIndicator(),
             Expanded(
-              child: widget.files.isEmpty && widget.error != null
+              child: _searching && widget.searchScopeShare
+                  ? _searchResults()
+                  : widget.files.isEmpty && widget.error != null
                   ? Center(
                       child: Padding(
                         padding: const EdgeInsets.all(24),
@@ -296,10 +344,16 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
 
   Widget _row(FileInfo file) {
     final selected = _selected.contains(_key(file));
+    final highlighted =
+        widget.highlightPath != null && _key(file) == widget.highlightPath;
     return ListTile(
       key: ValueKey(_key(file)),
       selected: selected,
       selectedTileColor: Theme.of(context).colorScheme.secondaryContainer,
+      tileColor:
+          !selected && highlighted
+              ? Theme.of(context).colorScheme.secondaryContainer
+              : null,
       leading: selected
           ? const Icon(Icons.check_circle)
           : FileIcon(
@@ -402,4 +456,70 @@ class _MobileFileBrowserState extends State<MobileFileBrowser> {
       );
     },
   );
+
+  Widget _searchResults() {
+    final hits = sortSearchHits(widget.searchHits);
+    return Column(
+      children: [
+        if (widget.searchStatus == 'searching')
+          const LinearProgressIndicator(minHeight: 2),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Text(
+            searchStatusLabel(
+              widget.searchStatus,
+              hits.length,
+              error: widget.searchError,
+            ),
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+        Expanded(
+          child: hits.isEmpty
+              ? ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(40),
+                      child: Text(
+                        widget.searchStatus == 'searching'
+                            ? '正在搜索…'
+                            : '没有匹配的文件',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ],
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.only(bottom: 96),
+                  itemCount: hits.length,
+                  itemBuilder: (_, index) => _hitRow(hits[index]),
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _hitRow(SearchHit hit) {
+    final highlighted =
+        widget.highlightPath != null && widget.highlightPath == hit.path;
+    return ListTile(
+      key: ValueKey('hit:${hit.path}'),
+      leading: FileIcon(
+        suffix: hit.suffix,
+        isDirectory: hit.isDirectory,
+        size: 32,
+      ),
+      title: Text(hit.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        hit.isDirectory ? hit.path : '${hit.path} · ${formatFileBytes(hit.sizeRow)}',
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      tileColor: highlighted
+          ? Theme.of(context).colorScheme.secondaryContainer
+          : null,
+      onTap: () => widget.onSearchOpen(hit),
+    );
+  }
 }

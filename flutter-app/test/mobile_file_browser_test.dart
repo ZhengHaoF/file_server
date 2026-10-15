@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:z_files/models/file_info.dart';
+import 'package:z_files/models/search_hit.dart';
 import 'package:z_files/widgets/mobile_file_browser.dart';
 
 FileInfo item(String name, {bool folder = false}) => FileInfo(
@@ -13,9 +14,20 @@ FileInfo item(String name, {bool folder = false}) => FileInfo(
   isDirectory: folder,
 );
 
+SearchHit hit(String name, String path, {bool folder = false}) => SearchHit(
+  name: name,
+  path: path,
+  sizeRow: 3,
+  isFile: !folder,
+  isDirectory: folder,
+  mtime: '',
+  suffix: folder ? null : '.pdf',
+);
+
 void main() {
   final events = <String>[];
   VoidCallback? lastSelectCallback;
+  late TextEditingController searchController;
   Widget browser({
     bool grid = false,
     String path = '',
@@ -23,6 +35,11 @@ void main() {
     List<FileInfo>? files,
     double scale = 1,
     bool autoSelectOnMore = false,
+    bool searchScopeShare = false,
+    List<SearchHit> searchHits = const [],
+    String searchStatus = 'idle',
+    String? searchError,
+    String? highlightPath,
   }) => MaterialApp(
     theme: ThemeData(useMaterial3: true),
     home: MediaQuery(
@@ -53,13 +70,25 @@ void main() {
         },
         onDownload: (f) => events.add('download:${f.name}'),
         thumbnail: (_) => null,
+        searchController: searchController,
+        searchScopeShare: searchScopeShare,
+        searchHits: searchHits,
+        searchStatus: searchStatus,
+        searchError: searchError,
+        highlightPath: highlightPath,
+        onSearchChanged: (q) => events.add('query:$q'),
+        onSearchScopeChanged: (share) => events.add('scope:$share'),
+        onSearchClose: () => events.add('searchClose'),
+        onSearchOpen: (hit) => events.add('open:${hit.path}'),
       ),
     ),
   );
   setUp(() {
     events.clear();
     lastSelectCallback = null;
+    searchController = TextEditingController();
   });
+  tearDown(() => searchController.dispose());
 
   testWidgets(
     'grid names retain tile width and long press opens menu without opening file',
@@ -133,7 +162,7 @@ void main() {
     'search filters current directory without losing path selection',
     (tester) async {
       await tester.pumpWidget(browser(autoSelectOnMore: true));
-      await tester.tap(find.byTooltip('搜索当前目录'));
+      await tester.tap(find.byTooltip('搜索文件'));
       await tester.pump();
       await tester.enterText(find.byType(TextField), 'b.txt');
       await tester.pump();
@@ -145,9 +174,50 @@ void main() {
       );
       await tester.tap(find.byTooltip('下载选中文件'));
       await tester.pump();
-      expect(events, ['more:b.txt', 'download:b.txt']);
+      expect(events, ['query:b.txt', 'more:b.txt', 'download:b.txt']);
     },
   );
+
+  testWidgets(
+    '整个共享范围渲染流式结果、状态文案并回调打开',
+    (tester) async {
+      await tester.pumpWidget(
+        browser(
+          searchScopeShare: true,
+          searchStatus: 'capped',
+          searchHits: [
+            hit('报告.pdf', 'docs/deep/报告.pdf'),
+            hit('照片', '旅行/照片', folder: true),
+          ],
+        ),
+      );
+      await tester.tap(find.byTooltip('搜索文件'));
+      await tester.pump();
+      expect(find.text('搜索整个共享目录'), findsOneWidget);
+      expect(find.text('docs/deep/报告.pdf · 3 B'), findsOneWidget);
+      expect(find.text('旅行/照片'), findsOneWidget);
+      expect(find.text('仅显示前 100 条，请输入更精确的关键词'), findsOneWidget);
+      await tester.tap(find.text('报告.pdf'));
+      await tester.pump();
+      expect(events, ['open:docs/deep/报告.pdf']);
+    },
+  );
+
+  testWidgets('范围切换回当前目录仍走内存过滤', (tester) async {
+    await tester.pumpWidget(browser(searchScopeShare: true));
+    await tester.tap(find.byTooltip('搜索文件'));
+    await tester.pump();
+    await tester.tap(find.text('当前目录'));
+    await tester.pump();
+    expect(events, ['scope:false']);
+    await tester.pumpWidget(browser(searchScopeShare: false));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'b.txt');
+    await tester.pump();
+    // 用行 key 而不是文本：输入框本身也会匹配 `find.text('b.txt')`。
+    expect(find.byKey(const ValueKey('b.txt')), findsOneWidget);
+    expect(find.byKey(const ValueKey('a.txt')), findsNothing);
+  });
 
   testWidgets('directory change clears selection and search', (tester) async {
     await tester.pumpWidget(browser(autoSelectOnMore: true));
@@ -155,7 +225,9 @@ void main() {
     await tester.pump();
     expect(find.text('已选 1 项'), findsOneWidget);
     await tester.pumpWidget(browser(autoSelectOnMore: true, path: 'new'));
+    await tester.pump();
     expect(find.text('已选 1 项'), findsNothing);
+    expect(events, ['more:a.txt', 'searchClose']);
   });
 
   testWidgets('files becoming empty clears selection and search', (tester) async {
@@ -164,7 +236,9 @@ void main() {
     await tester.pump();
     expect(find.text('已选 1 项'), findsOneWidget);
     await tester.pumpWidget(browser(autoSelectOnMore: true, files: []));
+    await tester.pump();
     expect(find.text('已选 1 项'), findsNothing);
+    expect(events, ['more:a.txt', 'searchClose']);
   });
 
   testWidgets(
@@ -178,7 +252,7 @@ void main() {
       await tester.pumpWidget(browser(files: [], error: '未登录'));
       await tester.tap(find.text('连接并登录'));
       await tester.pump();
-      expect(events, ['retry', 'connect']);
+      expect(events, ['retry', 'searchClose', 'connect']);
     },
   );
 

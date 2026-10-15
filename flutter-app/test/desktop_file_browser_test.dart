@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:z_files/models/file_info.dart';
+import 'package:z_files/models/search_hit.dart';
 import 'package:z_files/pages/download_manager_page.dart';
 import 'package:z_files/pages/settings_page.dart';
 import 'package:z_files/services/storage_service.dart';
@@ -66,6 +67,7 @@ void main() {
   );
 
   final events = <String>[];
+  late TextEditingController searchController;
   Widget browser({
     List<FileInfo>? files,
     String path = '',
@@ -74,6 +76,11 @@ void main() {
     bool loading = false,
     ThemeMode themeMode = ThemeMode.light,
     bool folderUpload = true,
+    bool searchScopeShare = false,
+    List<SearchHit> searchHits = const [],
+    String searchStatus = 'idle',
+    String? searchError,
+    String? highlightPath,
   }) => MaterialApp(
     theme: ThemeData(useMaterial3: true),
     darkTheme: ThemeData(useMaterial3: true, brightness: Brightness.dark),
@@ -104,11 +111,25 @@ void main() {
         onDelete: (f) => events.add('delete:${f.name}'),
         onDownload: (f) => events.add('download:${f.name}'),
         onCopy: (f) => events.add('copy:${f.name}'),
+        searchController: searchController,
+        searchScopeShare: searchScopeShare,
+        searchHits: searchHits,
+        searchStatus: searchStatus,
+        searchError: searchError,
+        highlightPath: highlightPath,
+        onSearchChanged: (q) => events.add('query:$q'),
+        onSearchScopeChanged: (share) => events.add('scope:$share'),
+        onSearchClose: () => events.add('searchClose'),
+        onSearchOpen: (hit) => events.add('open:${hit.path}'),
       ),
     ),
   );
 
-  setUp(events.clear);
+  setUp(() {
+    events.clear();
+    searchController = TextEditingController();
+  });
+  tearDown(() => searchController.dispose());
 
   Future<void> mount(
     WidgetTester tester, {
@@ -261,9 +282,16 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('file:a.txt')));
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const Key('file-search')), 'a');
+      // 目录切换触发 didUpdateWidget，由它把复位动作交给状态机。
       await tester.pumpWidget(browser(path: 'photos'));
       await tester.pumpAndSettle();
+      // 输入关键词会先转发给状态机（query:a），再由目录切换触发复位（searchClose）。
+      expect(events, ['path:photos', 'query:a', 'searchClose']);
       expect(find.textContaining('已选择'), findsNothing);
+      // 测试里的 onSearchClose 只记事件，不像 home_page 那样清空输入框，
+      // 所以这里手动补上这一步，再确认过滤条件随之复位、文件全部可见。
+      searchController.clear();
+      await tester.pump();
       expect(find.byKey(const ValueKey('file:b.txt')), findsOneWidget);
     },
   );
@@ -460,5 +488,44 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.light_mode_outlined), findsNothing);
     expect(find.byIcon(Icons.dark_mode_outlined), findsOneWidget);
+  });
+
+  testWidgets('整个共享范围用流式结果替换文件区', (tester) async {
+    await mount(
+      tester,
+      child: browser(
+        searchScopeShare: true,
+        // 不用 'searching'：那个状态会挂一个不确定的 LinearProgressIndicator，
+        // mount() 里的 pumpAndSettle 永远等不到静止。
+        searchStatus: 'complete',
+        searchHits: [
+          SearchHit(
+            name: '报告.pdf',
+            path: 'docs/报告.pdf',
+            sizeRow: 3,
+            isFile: true,
+            isDirectory: false,
+            mtime: '',
+          ),
+          SearchHit(
+            name: '照片',
+            path: '旅行/照片',
+            sizeRow: 0,
+            isFile: false,
+            isDirectory: true,
+            mtime: '',
+          ),
+        ],
+      ),
+    );
+    // 桌面端：路径走 subtitle，大小走 trailing，是两块独立的文本。
+    expect(find.text('docs/报告.pdf'), findsOneWidget);
+    expect(find.text('旅行/照片'), findsOneWidget);
+    expect(find.textContaining('共 2 条结果'), findsOneWidget);
+    await tester.tap(find.text('报告.pdf'));
+    // 搜索中状态带一个不确定的 LinearProgressIndicator，pumpAndSettle 会超时，
+    // 所以这里只推进一帧。
+    await tester.pump();
+    expect(events, ['open:docs/报告.pdf']);
   });
 }

@@ -10,6 +10,7 @@ import '../pages/settings_page.dart';
 import '../utils/date_utils.dart';
 import '../utils/file_browser_utils.dart';
 import '../utils/file_type_utils.dart';
+import '../models/search_hit.dart';
 import 'file_icon.dart';
 
 /// Which section the main content area shows. `files` is the browser; the
@@ -48,6 +49,18 @@ class DesktopFileBrowser extends StatefulWidget {
   final ValueChanged<FileInfo> onDownload;
   final ValueChanged<FileInfo> onCopy;
   final String? Function(FileInfo)? thumbnail;
+  // 递归搜索（整个共享目录）。查询文本与结果由 home_page 持有，本 widget 只负责
+  // 渲染与转发交互；当前目录范围仍走这里的内存过滤。
+  final TextEditingController searchController;
+  final bool searchScopeShare;
+  final List<SearchHit> searchHits;
+  final String searchStatus;
+  final String? searchError;
+  final String? highlightPath;
+  final ValueChanged<String> onSearchChanged;
+  final ValueChanged<bool> onSearchScopeChanged;
+  final VoidCallback onSearchClose;
+  final ValueChanged<SearchHit> onSearchOpen;
 
   const DesktopFileBrowser({
     super.key,
@@ -77,6 +90,16 @@ class DesktopFileBrowser extends StatefulWidget {
     this.canBack = false,
     this.canForward = false,
     this.thumbnail,
+    required this.searchController,
+    required this.searchScopeShare,
+    required this.searchHits,
+    required this.searchStatus,
+    required this.onSearchChanged,
+    required this.onSearchScopeChanged,
+    required this.onSearchClose,
+    required this.onSearchOpen,
+    this.searchError,
+    this.highlightPath,
   });
 
   @override
@@ -86,7 +109,6 @@ class DesktopFileBrowser extends StatefulWidget {
 class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
   final _selection = FileSelection();
   final _focus = FocusNode(debugLabel: 'desktop-file-area');
-  final _search = TextEditingController();
   final _scroll = ScrollController();
   _Section _section = _Section.files;
   bool _panelVisible = true;
@@ -97,11 +119,18 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
   @override
   void initState() {
     super.initState();
+    // 查询文本由 home_page 持有，关闭搜索时会从父组件清空；
+    // 这里监听它，保证过滤结果跟着复位（_visible 是缓存的）。
+    widget.searchController.addListener(_onSearchQueryChanged);
     _deriveFiles();
   }
 
+  void _onSearchQueryChanged() {
+    if (mounted) setState(_deriveFiles);
+  }
+
   void _deriveFiles() {
-    final query = _search.text.trim().toLowerCase();
+    final query = widget.searchController.text.trim().toLowerCase();
     _visible = sortBrowserFiles(
       widget.files.where((f) => f.name.toLowerCase().contains(query)).toList(),
       widget.sort,
@@ -120,12 +149,12 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.path != widget.path) {
       _selection.clear();
-      _search.clear();
+      widget.onSearchClose();
       if (_scroll.hasClients) _scroll.jumpTo(0);
     }
     if (widget.files.isEmpty && oldWidget.files.isNotEmpty) {
       _selection.clear();
-      _search.clear();
+      widget.onSearchClose();
       if (_scroll.hasClients) _scroll.jumpTo(0);
     }
     if (oldWidget.path != widget.path ||
@@ -134,12 +163,17 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
         oldWidget.foldersFirst != widget.foldersFirst) {
       _deriveFiles();
     }
+    if (!identical(oldWidget.searchController, widget.searchController)) {
+      oldWidget.searchController.removeListener(_onSearchQueryChanged);
+      widget.searchController.addListener(_onSearchQueryChanged);
+      _deriveFiles();
+    }
   }
 
   @override
   void dispose() {
     _focus.dispose();
-    _search.dispose();
+    widget.searchController.removeListener(_onSearchQueryChanged);
     _scroll.dispose();
     super.dispose();
   }
@@ -533,14 +567,40 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                                   .clamp(120, 260),
                               child: TextField(
                                 key: const Key('file-search'),
-                                controller: _search,
-                                onChanged: (_) => setState(_deriveFiles),
-                                decoration: const InputDecoration(
-                                  hintText: '搜索当前目录',
-                                  prefixIcon: Icon(Icons.search, size: 20),
+                                controller: widget.searchController,
+                                onChanged: (text) {
+                                  setState(_deriveFiles);
+                                  widget.onSearchChanged(text);
+                                },
+                                decoration: InputDecoration(
+                                  hintText: widget.searchScopeShare
+                                      ? '搜索整个共享目录'
+                                      : '搜索当前目录',
+                                  prefixIcon: const Icon(
+                                    Icons.search,
+                                    size: 20,
+                                  ),
                                   isDense: true,
-                                  border: OutlineInputBorder(),
+                                  border: const OutlineInputBorder(),
                                 ),
+                              ),
+                            ),
+                            SizedBox(
+                              height: 40,
+                              child: SegmentedButton<bool>(
+                                segments: const [
+                                  ButtonSegment(
+                                    value: false,
+                                    label: Text('当前目录'),
+                                  ),
+                                  ButtonSegment(
+                                    value: true,
+                                    label: Text('整个共享'),
+                                  ),
+                                ],
+                                selected: {widget.searchScopeShare},
+                                onSelectionChanged: (selection) =>
+                                    widget.onSearchScopeChanged(selection.first),
                               ),
                             ),
                             // 单个上传入口：文件和文件夹两条路径收进同一个菜单，
@@ -742,7 +802,9 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                                 focusNode: _focus,
                                 autofocus: true,
                                 onKeyEvent: _key,
-                                child: _fileArea(),
+                                child: widget.searchScopeShare
+                                    ? _searchResults()
+                                    : _fileArea(),
                               ),
                             ),
                             if (wide && _panelVisible)
@@ -764,7 +826,13 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                           children: [
                             Expanded(
                               child: Text(
-                                '${_visible.length} 项${_search.text.isNotEmpty ? ' · 仅搜索当前已加载目录' : ''}',
+                                widget.searchScopeShare
+                                    ? searchStatusLabel(
+                                        widget.searchStatus,
+                                        widget.searchHits.length,
+                                        error: widget.searchError,
+                                      )
+                                    : '${_visible.length} 项${widget.searchController.text.isNotEmpty ? ' · 仅搜索当前已加载目录' : ''}',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: colors.onSurfaceVariant,
@@ -938,7 +1006,7 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
                   ? '正在读取目录…'
                   : widget.error != null
                   ? '目录暂时无法加载'
-                  : _search.text.isNotEmpty
+                  : widget.searchController.text.isNotEmpty
                   ? '没有匹配的文件'
                   : '这个目录是空的',
             ),
@@ -1067,7 +1135,10 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
         child: Material(
           color: selected
               ? colors.primaryContainer.withValues(alpha: .6)
-              : colors.surface,
+              : widget.highlightPath != null &&
+                      widget.highlightPath == FileSelection.keyOf(file)
+                  ? colors.secondaryContainer
+                  : colors.surface,
           child: InkWell(
             key: ValueKey('file:${FileSelection.keyOf(file)}'),
             canRequestFocus: false,
@@ -1270,4 +1341,55 @@ class _DesktopFileBrowserState extends State<DesktopFileBrowser> {
       ],
     ),
   );
+
+  Widget _searchResults() {
+    final hits = sortSearchHits(widget.searchHits);
+    return Column(
+      children: [
+        if (widget.searchStatus == 'searching')
+          const LinearProgressIndicator(minHeight: 2),
+        // 状态文案由底部状态栏统一呈现，这里不再重复。
+        Expanded(
+          child: hits.isEmpty
+              ? Center(
+                child: Text(
+                  widget.searchStatus == 'searching'
+                      ? '正在搜索…'
+                      : '没有匹配的文件',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              )
+              : ListView.builder(
+                controller: _scroll,
+                itemCount: hits.length,
+                itemBuilder: (_, index) {
+                  final hit = hits[index];
+                  final highlighted =
+                      widget.highlightPath != null &&
+                      widget.highlightPath == hit.path;
+                  return ListTile(
+                    key: ValueKey('hit:${hit.path}'),
+                    leading: FileIcon(
+                      suffix: hit.suffix,
+                      isDirectory: hit.isDirectory,
+                      size: 22,
+                    ),
+                    title: Text(hit.name, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(hit.path, overflow: TextOverflow.ellipsis),
+                    trailing: hit.isDirectory
+                        ? null
+                        : Text(formatFileBytes(hit.sizeRow)),
+                    tileColor: highlighted
+                        ? Theme.of(context).colorScheme.secondaryContainer
+                        : null,
+                    onTap: () => widget.onSearchOpen(hit),
+                  );
+                },
+              ),
+        ),
+      ],
+    );
+  }
 }

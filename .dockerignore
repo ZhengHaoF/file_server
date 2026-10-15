@@ -1,8 +1,6 @@
 **
 !admin/
 !admin/**
-!web/
-!web/**
 !server-rust/
 !server-rust/Cargo.toml
 !server-rust/Cargo.lock

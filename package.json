@@ -4,9 +4,7 @@
   "description": "简易文件服务器 monorepo - 针对大量查看NAS图片的需求开发",
   "scripts": {
     "dev:server": "cargo run --manifest-path server-rust/Cargo.toml",
-    "dev:web": "cd web && npm run dev",
     "dev:admin": "cd admin && npm run dev",
-    "build:web": "cd web && npm run build",
     "build:admin": "cd admin && npm run build",
     "assemble": "node assemble.js",
     "pack": "node scripts/pack-rust.cjs",

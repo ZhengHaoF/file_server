@@ -756,13 +756,13 @@ mod tests {
         use std::os::unix::fs::{symlink, PermissionsExt};
         let (_dir, base) = setup();
         let cfg = base.join("config.json");
-        std::fs::create_dir_all(base.join("static/web")).unwrap();
+        std::fs::create_dir_all(base.join("static/admin")).unwrap();
         std::fs::create_dir_all(base.join("data")).unwrap();
-        symlink(base.join("static/web"), base.join("data/logs")).unwrap();
+        symlink(base.join("static/admin"), base.join("data/logs")).unwrap();
         std::fs::write(&cfg, "{}").unwrap();
         assert!(load(Some(cfg.clone()), &Env::default()).is_err());
         std::fs::remove_file(base.join("data/logs")).unwrap();
-        symlink(base.join("static/web/leak.db"), base.join("data/imgCache.db")).unwrap();
+        symlink(base.join("static/admin/leak.db"), base.join("data/imgCache.db")).unwrap();
         assert!(load(Some(cfg.clone()), &Env::default()).is_err());
         std::fs::remove_file(base.join("data/imgCache.db")).unwrap();
         std::fs::write(base.join("files/key.pem"), "k").unwrap();
@@ -777,7 +777,7 @@ mod tests {
         assert_eq!(mode & 0o777, 0o755);
         // Missing static dir behind an alias into the share is resolved through the alias.
         symlink(base.join("files"), base.join("alias")).unwrap();
-        std::fs::write(&cfg, r#"{"staticDir":"./alias/web"}"#).unwrap();
+        std::fs::write(&cfg, r#"{"staticDir":"./alias/admin"}"#).unwrap();
         assert!(load(Some(cfg.clone()), &Env::default()).is_err());
         std::fs::write(&cfg, "{}").unwrap();
         let config = load(Some(cfg), &Env::default()).unwrap();

@@ -22,12 +22,11 @@ pub struct Server {
 pub fn layout(extra: Value) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let base = dir.path();
-    for d in ["files", "static/web/assets", "static/admin"] {
+    for d in ["files", "static/admin/assets"] {
         std::fs::create_dir_all(base.join(d)).unwrap();
     }
-    std::fs::write(base.join("static/web/index.html"), "<!doctype html><title>web</title>").unwrap();
-    std::fs::write(base.join("static/web/assets/app.js"), "console.log(1)").unwrap();
     std::fs::write(base.join("static/admin/index.html"), "<!doctype html><title>admin</title>").unwrap();
+    std::fs::write(base.join("static/admin/assets/app.js"), "console.log(1)").unwrap();
     let mut config = json!({
         "rootPath": "./files", "dataPath": "./data", "staticDir": "./static", "host": "127.0.0.1", "port": 0,
     });

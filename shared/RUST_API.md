@@ -31,7 +31,7 @@ file-server --version | --help
 | `rootPath` 共享目录（必须已存在） | `./files` | `FILE_SERVER_ROOT` |
 | `dataPath` 私有数据（凭据、数据库、日志、配置覆盖） | `./data` | `FILE_SERVER_DATA_DIR` |
 | `imgCache` 缩略图缓存 | `<dataPath>/cache` | `FILE_SERVER_CACHE_DIR` |
-| `staticDir` 前端产物，内含 `web/` 与 `admin/` | `./static` | `FILE_SERVER_STATIC_DIR` |
+| `staticDir` 前端产物，内含 `admin/` | `./static` | `FILE_SERVER_STATIC_DIR` |
 | `host` | `127.0.0.1` | `FILE_SERVER_HOST` |
 | `port` | `3000` | `FILE_SERVER_PORT` |
 | `httpsPort` | `3001` | `FILE_SERVER_HTTPS_PORT` |
@@ -114,7 +114,7 @@ file-server --version | --help
 
 ## 静态托管
 
-`staticDir/web` 挂在 `/`，`staticDir/admin` 挂在 `/admin/`（`/admin` 308 重定向到 `/admin/`）。`/admin/*` 无扩展名且**确实不存在**的路径回退 `admin/index.html`（history 路由）；被拒绝的路径（软链接、隐藏文件、穿越）返回 403，绝不伪装成 index。所有静态路径（包括 `web`/`admin` 目录本身与 `index.html`）都从已校验的 `staticDir` 根逐段解析并拒绝软链接。`/assets/*` 带 `immutable` 缓存，其余 `no-cache`。未知 `/api/*` 返回 JSON 404。
+文件客户端是 Flutter 原生应用，浏览器端只保留管理后台：`staticDir/admin` 挂在 `/admin/`（`/admin` 与 `/` 均 308 重定向到 `/admin/`）。`/admin/*` 无扩展名且**确实不存在**的路径回退 `admin/index.html`（history 路由）；被拒绝的路径（软链接、隐藏文件、穿越）返回 403，绝不伪装成 index。所有静态路径（包括 `admin` 目录本身与 `index.html`）都从已校验的 `staticDir` 根逐段解析并拒绝软链接。`/admin/assets/*` 带 `immutable` 缓存，其余 `no-cache`。未知路径（含 `/api/*`）返回 JSON 404。
 
 ## 管理接口 `/api/admin/*`
 

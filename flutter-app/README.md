@@ -93,9 +93,9 @@ App 依赖后端服务提供以下接口：
 | `POST /delFile` | 删除文件 |
 | `POST /restartServer` | 重启服务 |
 
-## 配套 Web 项目
+## 浏览器端
 
-本仓库仅包含 Flutter 端。配套的 Vue 3 网页版客户端在独立项目维护（已通过 `.gitignore` 排除）。
+文件浏览只由本 Flutter 应用承担；服务端已移除浏览器文件客户端，`http://<后端地址>/` 会重定向到 `/admin/` 管理后台。
 
 ## 注意事项
 

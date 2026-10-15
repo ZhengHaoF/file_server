@@ -9,10 +9,10 @@ function fixture(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rust-pack-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const executable = process.platform === 'win32' ? 'file-server.exe' : 'file-server';
-    for (const name of ['static/web', 'static/admin', 'target/release', 'data', 'files']) {
+    for (const name of ['static/admin', 'target/release', 'data', 'files']) {
         fs.mkdirSync(path.join(root, 'server-rust', name), { recursive: true });
     }
-    for (const name of ['static/web/index.html', 'static/admin/index.html', `target/release/${executable}`,
+    for (const name of ['static/admin/index.html', `target/release/${executable}`,
         'README.md', 'data/auth.local.json', 'data/service.sqlite', 'files/private-photo.jpg']) {
         fs.writeFileSync(path.join(root, 'server-rust', name), 'fixture');
     }
@@ -110,7 +110,7 @@ test('tools directory is optional and incomplete staging fails', t => {
     fs.rmSync(path.join(root, 'server-rust', 'tools', `${process.platform}-${process.arch}`, `ffmpeg${toolSuffix}`));
     assert.throws(() => buildDistribution(root, { archive: false }), /媒体工具目录缺少 ffmpeg/);
     assert.equal(fs.existsSync(path.join(dist, 'tools')), false);
-    assert.equal(fs.existsSync(path.join(dist, 'static/web/index.html')), true);
+    assert.equal(fs.existsSync(path.join(dist, 'static/admin/index.html')), true);
 });
 
 test('refuses symlinked media tools', t => {

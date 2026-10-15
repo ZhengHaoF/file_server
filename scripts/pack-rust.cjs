@@ -60,8 +60,7 @@ function buildDistribution(root = path.resolve(__dirname, '..'), {
     const server = path.join(root, 'server-rust');
     const executable = platform === 'win32' ? 'file-server.exe' : 'file-server';
     const binary = binaryPath || path.join(server, 'target', 'release', executable);
-    for (const required of [binary, path.join(server, 'static/web/index.html'),
-        path.join(server, 'static/admin/index.html'), path.join(server, 'README.md')]) {
+    for (const required of [binary, path.join(server, 'static/admin/index.html'), path.join(server, 'README.md')]) {
         if (!fs.existsSync(required)) throw new Error(`缺少 ${required}，请先构建前端和 Rust release`);
     }
     if (!fs.lstatSync(binary).isFile() || fs.lstatSync(binary).isSymbolicLink()) {

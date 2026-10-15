@@ -10,7 +10,6 @@
 跨端文件浏览/管理 App，技术栈是 **Flutter**，单仓多端：
 
 - **Flutter 移动端**（`lib/`）：浏览/播放后端文件服务器上的文件（视频、音频、图片、其他文件），支持设置主题、排序、播放方式等
-- **配套 Web 端**（`网页项目/`）：Vue 3 实现，独立的网页版文件浏览器，与 Flutter 端功能镜像
 - **后端服务**（不在本仓内，地址默认 `http://localhost:3000`）：提供 `list / getFile / getVideoPreview / delFile / restartServer` 等接口
 
 Flutter 端不是单例状态管理（没有用 Provider/Riverpod），直接 `setState` + `Navigator.push`，代码风格偏简单直接。
@@ -75,7 +74,6 @@ flutter_application_1/
 ├── ios/  macos/  linux/  windows/      # 其他平台
 ├── test/                              # Flutter 测试
 │   └── widget_test.dart               # 默认生成的 widget 测试入口
-├── 网页项目/                           # 独立 Vue 3 Web 项目（不在 Flutter 编译范围内）
 └── pubspec.yaml
 ```
 

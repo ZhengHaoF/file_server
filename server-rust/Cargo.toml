@@ -3,7 +3,7 @@ name = "file-server"
 version = "0.2.0"
 edition = "2021"
 rust-version = "1.89"
-description = "File Serve NAS file server (Rust backend hosting web + admin)"
+description = "File Serve NAS file server (Rust backend hosting the admin console)"
 license = "ISC"
 publish = false
 

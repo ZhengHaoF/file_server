@@ -1,5 +1,4 @@
 packages:
-  - 'web'
   - 'admin'
 
 # pnpm 11 起，允许执行构建脚本的依赖必须逐一声明。

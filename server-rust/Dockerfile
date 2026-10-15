@@ -2,9 +2,8 @@
 FROM node:22-bookworm-slim AS frontend
 WORKDIR /src
 COPY package.json assemble.js ./
-COPY web/ ./web/
 COPY admin/ ./admin/
-RUN npm --prefix web ci && npm --prefix admin ci && npm run assemble
+RUN npm --prefix admin ci && npm run assemble
 
 FROM rust:bookworm AS rust
 WORKDIR /src/server-rust

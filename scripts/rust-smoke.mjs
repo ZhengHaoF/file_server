@@ -15,7 +15,7 @@ const files = path.join(sandbox, 'files');
 const data = path.join(sandbox, 'data');
 const cache = path.join(sandbox, 'cache');
 const staticDir = path.join(sandbox, 'static');
-for (const directory of [files, data, cache, path.join(staticDir, 'web'), path.join(staticDir, 'admin')]) {
+for (const directory of [files, data, cache, path.join(staticDir, 'admin')]) {
     await fs.mkdir(directory, { recursive: true });
 }
 await fs.writeFile(path.join(files, 'sample.txt'), '0123456789');
@@ -28,7 +28,6 @@ for (const directory of ['$', '$$']) {
 await fs.writeFile(path.join(files, 'literal.jpg!32x24'), 'not-a-thumbnail-request');
 await fs.writeFile(path.join(sandbox, 'outside.txt'), 'outside');
 await fs.symlink(path.join(sandbox, 'outside.txt'), path.join(files, 'escape.txt'));
-await fs.writeFile(path.join(staticDir, 'web/index.html'), '<h1>acceptance file client</h1>');
 await fs.writeFile(path.join(staticDir, 'admin/index.html'), '<h1>acceptance administration</h1>');
 const temporaryListener = net.createServer();
 await new Promise(resolve => temporaryListener.listen(0, '127.0.0.1', resolve));
@@ -118,22 +117,27 @@ async function login(token = adminToken) {
 
 try {
     await launch();
-    await check('static clients and history fallback', async () => {
-        assert.match(await (await request('/', { auth: false })).text(), /acceptance file client/);
+    await check('admin console hosting and history fallback', async () => {
+        const root = await request('/', { auth: false });
+        assert.ok(root.url.endsWith('/admin/'), 'the file client is native; root must point at the admin console');
+        assert.match(await root.text(), /acceptance administration/);
         assert.match(await (await request('/admin/config', { auth: false })).text(), /acceptance administration/);
         assert.equal((await request('/api/admin/not-a-route')).status, 404);
     });
     await check('static application roots and index files refuse private symlinks', async () => {
-        const web = path.join(staticDir, 'web');
-        const originalWeb = path.join(staticDir, 'web-original');
-        await fs.rename(web, originalWeb);
-        await fs.symlink(data, web);
+        const admin = path.join(staticDir, 'admin');
+        const originalAdmin = path.join(staticDir, 'admin-original');
+        await fs.rename(admin, originalAdmin);
+        await fs.symlink(data, admin);
         try {
-            assert.ok([403, 404].includes((await request('/auth.local.json', { auth: false })).status),
+            const response = await request('/admin/config', { auth: false });
+            assert.ok([403, 404].includes(response.status),
                 'static application root links must not expose private credentials');
+            assert.ok(!(await response.text()).includes('accessToken'), 'private credentials must never leak');
+            assert.ok([403, 404].includes((await request('/auth.local.json', { auth: false })).status));
         } finally {
-            await fs.unlink(web);
-            await fs.rename(originalWeb, web);
+            await fs.unlink(admin);
+            await fs.rename(originalAdmin, admin);
         }
         const index = path.join(staticDir, 'admin/index.html');
         const originalIndex = await fs.readFile(index);

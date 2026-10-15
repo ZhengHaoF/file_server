@@ -756,15 +756,16 @@ async fn logs_query_export_and_cursor() {
 }
 
 #[tokio::test]
-async fn static_hosting_and_history_fallback() {
+async fn admin_hosting_and_history_fallback() {
     let s = start(json!({})).await;
+    // The file client is the native app now, so `/` only points at the admin console.
     let res = s.client.get(s.u("/")).send().await.unwrap();
+    assert!(res.url().path().ends_with("/admin/"));
     assert_eq!(res.status(), 200);
-    assert!(res.text().await.unwrap().contains("<title>web</title>"));
-    let res = s.client.get(s.u("/assets/app.js")).send().await.unwrap();
-    assert!(header(res.headers(), "cache-control").contains("immutable"));
     let res = s.client.get(s.u("/admin")).send().await.unwrap();
     assert!(res.url().path().ends_with("/admin/"));
+    let res = s.client.get(s.u("/admin/assets/app.js")).send().await.unwrap();
+    assert!(header(res.headers(), "cache-control").contains("immutable"));
     let res = s.client.get(s.u("/admin/logs/live")).send().await.unwrap();
     assert!(res.text().await.unwrap().contains("<title>admin</title>"));
     assert_eq!(s.client.get(s.u("/admin/missing.js")).send().await.unwrap().status(), 404);
@@ -780,8 +781,6 @@ async fn static_symlinks_never_expose_private_data() {
     std::fs::create_dir_all(base.join("data")).unwrap();
     std::fs::write(base.join("data/secret.txt"), "private-data").unwrap();
     std::fs::write(base.join("outside.html"), "outside-index").unwrap();
-    std::fs::remove_dir_all(base.join("static/web")).unwrap();
-    std::os::unix::fs::symlink(base.join("data"), base.join("static/web")).unwrap();
     std::fs::remove_file(base.join("static/admin/index.html")).unwrap();
     std::os::unix::fs::symlink(base.join("outside.html"), base.join("static/admin/index.html")).unwrap();
     let s = start_in(dir, false).await;

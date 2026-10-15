@@ -13,7 +13,7 @@ let completed = 0;
 async function fixture(run) {
     const base = await fs.mkdtemp(path.join(os.tmpdir(), 'rust-startup-security-'));
     try {
-        for (const directory of ['files', 'data', 'cache', 'static/web', 'static/admin', 'cert']) {
+        for (const directory of ['files', 'data', 'cache', 'static/admin', 'cert']) {
             await fs.mkdir(path.join(base, directory), { recursive: true, mode: 0o755 });
         }
         const values = {
@@ -61,19 +61,19 @@ async function check(name, run) {
 }
 try {
     await check('private log symlink never publishes into static assets', async (base, values) => {
-        await fs.symlink(path.join(base, 'static/web'), path.join(base, 'data/logs'));
+        await fs.symlink(path.join(base, 'static/admin'), path.join(base, 'data/logs'));
         await rejected(base, values);
-        assert.equal((await fs.readdir(path.join(base, 'static/web'))).length, 0);
+        assert.equal((await fs.readdir(path.join(base, 'static/admin'))).length, 0);
     });
     await check('private database symlink never opens a public target', async (base, values) => {
-        const target = path.join(base, 'static/web/leaked.db');
+        const target = path.join(base, 'static/admin/leaked.db');
         // Empty files are valid SQLite creation targets; a text marker would
         // incorrectly pass because SQLite rejects it before exercising the leak.
         await fs.writeFile(target, Buffer.alloc(0));
         await fs.symlink(target, path.join(base, 'data/imgCache.db'));
         await rejected(base, values);
         assert.equal((await fs.readFile(target)).length, 0);
-        assert.deepEqual(await fs.readdir(path.join(base, 'static/web')), ['leaked.db']);
+        assert.deepEqual(await fs.readdir(path.join(base, 'static/admin')), ['leaked.db']);
     });
     await check('TLS private keys inside shared files are refused during configuration checks', async (base, values) => {
         values.httpsEnabled = true;

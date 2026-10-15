@@ -2,9 +2,9 @@
 
 ## 当前架构
 
-- `server-rust/` 是唯一服务端，Rust二进制 `file-server` 同域托管文件客户端与 `/admin/`，不使用Tauri。
-- `server-rust/src/` 包含配置、认证、文件流、预览队列、SQLite、静态托管与管理接口；`tests/` 使用隔离数据和真实TCP服务。
-- `web/` 是Vue/Vant文件客户端；`admin/` 是Vue管理后台，history base为 `/admin/`；`flutter-app/` 是原生客户端。
+- `server-rust/` 是唯一服务端，Rust二进制 `file-server` 同域托管 `/admin/` 管理后台，不使用Tauri。
+- `server-rust/src/` 包含配置、认证、文件流、预览队列、SQLite、管理后台静态托管与管理接口；`tests/` 使用隔离数据和真实TCP服务。
+- `admin/` 是Vue管理后台，history base为 `/admin/`；`flutter-app/` 是Flutter文件客户端。浏览器文件端已移除，`/` 重定向到 `/admin/`，文件浏览只走 Flutter 客户端。
 - 正式服务契约见 `shared/RUST_API.md`，管理交互见 `shared/ADMIN_CONTRACT.md`，迁移与回退见 `docs/RUST_MIGRATION.md`。
 - 旧Node后端、旧打包入口和专用CI已移除。Node22只用于Vue构建、测试及仓库脚本；不要重新引入 `server/` 或 `dev:legacy`。
 - 用户允许改革不合理的协议/交互/架构，但必须同步调整客户端、契约和回归测试。
@@ -29,13 +29,11 @@
 ## 构建与检查
 
 ```bash
-npm --prefix web ci
 npm --prefix admin ci
 npm run check:rust
 cargo build --locked --manifest-path server-rust/Cargo.toml
 npm run test:rust:smoke
 npm run test:rust:security
-npm --prefix web test -- --run
 npm --prefix admin test -- --run
 npm run test:repository
 npm run test:distribution
@@ -44,7 +42,7 @@ npm run build:server
 npm run pack
 ```
 
-`assemble.js`只同步两个生产前端到 `server-rust/static/`。`scripts/pack-rust.cjs`只分发当前平台Rust二进制、前端和安全模板，缺产物立即失败；媒体工具可选：平铺暂存到 `server-rust/tools/<平台>-<架构>/`（git忽略，含vips、vipsheader、ffmpeg及依赖DLL）即随包分发为 `tools/`，服务端按环境变量、exe同级 `tools/`、PATH顺序解析，暂存缺本体或含软链接时打包失败；未暂存的包目标机器需自备libvips和FFmpeg，再分发FFmpeg须遵守其许可证（对外用LGPL构建）。
+`assemble.js`只同步管理后台前端到 `server-rust/static/admin/`。`scripts/pack-rust.cjs`只分发当前平台Rust二进制、前端和安全模板，缺产物立即失败；媒体工具可选：平铺暂存到 `server-rust/tools/<平台>-<架构>/`（git忽略，含vips、vipsheader、ffmpeg及依赖DLL）即随包分发为 `tools/`，服务端按环境变量、exe同级 `tools/`、PATH顺序解析，暂存缺本体或含软链接时打包失败；未暂存的包目标机器需自备libvips和FFmpeg，再分发FFmpeg须遵守其许可证（对外用LGPL构建）。
 
 Flutter改动须执行 `flutter analyze` 与全套 `flutter test`。当前 `dart:io` 路径不是完整Flutter Web适配。
 

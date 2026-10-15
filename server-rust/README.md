@@ -1,6 +1,6 @@
 # Rust 文件服务
 
-独立运行 `file-server`，在 `/` 提供文件客户端，在 `/admin/` 提供管理端。没有 Tauri 外壳，也没有 Node 运行时依赖；媒体预览需要可执行的 `vips`、`vipsheader` 和 `ffmpeg`。
+独立运行 `file-server`，在 `/admin/` 提供管理端（`/` 重定向到 `/admin/`）；文件客户端是 Flutter 原生应用，不再内置浏览器文件端。没有 Tauri 外壳，也没有 Node 运行时依赖；媒体预览需要可执行的 `vips`、`vipsheader` 和 `ffmpeg`。
 
 ## 配置与启动
 

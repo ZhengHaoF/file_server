@@ -6,17 +6,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
-  server-and-web:
+  server-and-admin:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm --prefix web ci
       - run: npm --prefix admin ci
       - run: npm run test:repository
-      - run: npm --prefix web test -- --run
       - run: npm --prefix admin test -- --run
       - run: npm run assemble
       - run: npm run test:distribution
@@ -34,7 +32,7 @@ jobs:
         with:
           workspaces: server-rust
       - run: sudo apt-get update && sudo apt-get install -y libvips-tools ffmpeg
-      - run: npm --prefix web ci && npm --prefix admin ci
+      - run: npm --prefix admin ci
       - run: npm run assemble
       - run: npm run check:rust
       - run: cargo build --locked --manifest-path server-rust/Cargo.toml
@@ -57,7 +55,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: server-rust
-      - run: npm --prefix web ci
       - run: npm --prefix admin ci
       - run: npm run assemble
       - run: npm run build:server

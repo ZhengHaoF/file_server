@@ -1,4 +1,4 @@
-//! Rust file server: shared-folder HTTP API, previews, admin console API and static UI hosting.
+//! Rust file server: shared-folder HTTP API, previews, admin console API and admin static hosting.
 
 pub mod admin;
 pub mod app;
@@ -14,7 +14,7 @@ pub mod previews;
 pub mod search;
 pub mod server;
 pub mod state;
-pub mod web;
+pub mod static_site;
 
 use state::{ListenerStatus, Options, SharedState};
 use std::net::SocketAddr;
